@@ -103,6 +103,16 @@ It is not included in the Windows on ARM download.
 [Read the MilkDrop guide](https://spotifast.rocks/milkdrop/) for presets,
 controls, and fullscreen mode.
 
+## Lyrics translation (fork)
+
+This fork adds a lyrics translator: a globe button in the lyrics views shows
+a translation under each original line, using a free model from OpenRouter or
+Google AI Studio with your own API key. The key stays on this computer, in a
+file only you can read, and only the lyric lines travel to the provider you
+pick. Settings has a **Lyrics translator** section for the provider, key,
+model, and language. Fork setup, privacy notes, and the rebase recipe live in
+[FORK-NOTES.md](FORK-NOTES.md).
+
 ## Guides and help
 
 The complete guide lives at **[spotifast.rocks](https://spotifast.rocks/)**.
