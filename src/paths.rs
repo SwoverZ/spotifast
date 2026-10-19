@@ -98,6 +98,12 @@ impl AppDirs {
         self.state.join("proxy_password")
     }
 
+    /// Optional lyrics-translation API key, owner-only, never written to
+    /// settings.json.
+    pub fn translation_key_file(&self) -> PathBuf {
+        self.state.join("translation_key")
+    }
+
     pub fn volume_dir(&self) -> PathBuf {
         self.state.join("volume")
     }

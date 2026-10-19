@@ -197,6 +197,28 @@ impl ProxyMode {
     }
 }
 
+/// Which service translates lyrics for the lyrics translator.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslateProvider {
+    /// OpenRouter, whose model list marks the free models.
+    #[default]
+    OpenRouter,
+    /// Google AI Studio, free within its rate limits.
+    GoogleStudio,
+}
+
+impl TranslateProvider {
+    pub const ALL: [TranslateProvider; 2] = [Self::OpenRouter, Self::GoogleStudio];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OpenRouter => "OpenRouter",
+            Self::GoogleStudio => "Google AI Studio",
+        }
+    }
+}
+
 /// Only confirmed proxy preferences are written with other settings. The
 /// password stays in memory and the protected store, never in this snapshot.
 #[derive(Clone, PartialEq, Eq)]
@@ -281,6 +303,16 @@ pub struct Settings {
     pub sidebar_grid: bool,
     pub sidebar_width: f32,
     pub lyrics_width: f32,
+    /// Show a translation under each lyric line.
+    pub lyrics_translate: bool,
+    /// The service that translates lyrics.
+    pub lyrics_translate_provider: TranslateProvider,
+    /// Model id for the provider; `None` picks the first free model it lists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lyrics_translate_model: Option<String>,
+    /// Translation language as an ISO 639-1 code; empty follows the desktop.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub lyrics_translate_language: String,
     pub queue_width: f32,
     /// Use compact single-line rows without cover art in track lists.
     pub tracklist_compact: bool,
@@ -450,6 +482,10 @@ impl Default for Settings {
             sidebar_grid: false,
             sidebar_width: 250.0,
             lyrics_width: 360.0,
+            lyrics_translate: false,
+            lyrics_translate_provider: TranslateProvider::OpenRouter,
+            lyrics_translate_model: None,
+            lyrics_translate_language: String::new(),
             queue_width: 360.0,
             tracklist_compact: false,
             middle_click_autoscroll: false,
@@ -1121,6 +1157,45 @@ mod tests {
     fn older_settings_keep_the_sidebar_visible() {
         let settings: Settings = serde_json::from_str("{}").unwrap();
         assert!(settings.sidebar_visible);
+    }
+
+    #[test]
+    fn older_settings_keep_the_lyrics_translator_off() {
+        use super::TranslateProvider;
+        let settings: Settings = serde_json::from_str(r#"{"volume": 37}"#).unwrap();
+        assert!(!settings.lyrics_translate);
+        assert_eq!(
+            settings.lyrics_translate_provider,
+            TranslateProvider::OpenRouter
+        );
+        assert_eq!(settings.lyrics_translate_model, None);
+        assert!(settings.lyrics_translate_language.is_empty());
+        let chosen: Settings = serde_json::from_str(
+            r#"{"lyrics_translate":true,"lyrics_translate_provider":"google_studio","lyrics_translate_model":"gemini-flash","lyrics_translate_language":"es"}"#,
+        )
+        .unwrap();
+        assert!(chosen.lyrics_translate);
+        assert_eq!(
+            chosen.lyrics_translate_provider,
+            TranslateProvider::GoogleStudio
+        );
+        assert_eq!(
+            chosen.lyrics_translate_model.as_deref(),
+            Some("gemini-flash")
+        );
+        assert_eq!(chosen.lyrics_translate_language, "es");
+        let decoded: Settings =
+            serde_json::from_str(&serde_json::to_string(&chosen).unwrap()).unwrap();
+        assert!(decoded.lyrics_translate);
+        assert_eq!(
+            decoded.lyrics_translate_provider,
+            TranslateProvider::GoogleStudio
+        );
+        assert_eq!(
+            decoded.lyrics_translate_model.as_deref(),
+            Some("gemini-flash")
+        );
+        assert_eq!(decoded.lyrics_translate_language, "es");
     }
 
     #[test]
