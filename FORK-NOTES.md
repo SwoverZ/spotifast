@@ -48,7 +48,8 @@ feature lives here. Everything else tracks upstream; the branch is
 ## Files this fork adds or changes
 
 - `src/lyrics_translation.rs` (new, self-contained): providers, free-model
-  lists, the prompt and its parsing, one retry on 429 and 5xx, and the
+  lists, the prompt and its parsing, one retry on 429, 5xx, and answers that
+  arrive cut short (a free provider can drop a generation halfway), and the
   on-disk cache, with unit tests against a local fake server. No new crates.
 - Additions to existing files:
   - `src/settings.rs`: `lyrics_translate`, `lyrics_translate_provider`,

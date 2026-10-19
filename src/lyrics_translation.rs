@@ -275,8 +275,10 @@ struct Choice {
 
 #[derive(Deserialize)]
 struct Message {
+    /// Some providers answer `content: null` when they fail to generate.
+    /// Treat it as empty text so the error says what really happened.
     #[serde(default)]
-    content: String,
+    content: Option<String>,
 }
 
 async fn openrouter_translate(
@@ -307,7 +309,7 @@ async fn openrouter_translate(
     let content = answer
         .choices
         .first()
-        .map(|choice| choice.message.content.as_str())
+        .map(|choice| choice.message.content.as_deref().unwrap_or_default())
         .ok_or("OpenRouter returned no translation")?;
     parse_translations(content, lines.len())
 }
@@ -513,8 +515,10 @@ fn http_error(provider: &str, status: reqwest::StatusCode) -> String {
     }
 }
 
-/// Sends a request, waiting out one rate limit or server fault. `build` runs
-/// again for the retry, so no request body is cloned.
+/// Sends a request, waiting out one rate limit, server fault, or an answer
+/// that arrives cut short: a free provider can drop a generation halfway, and
+/// a fresh request usually carries the whole answer. `build` runs again for
+/// the retry, so no request body is cloned.
 async fn with_retry(
     provider: &str,
     mut build: impl FnMut() -> reqwest::RequestBuilder,
@@ -537,10 +541,14 @@ async fn with_retry(
         if !status.is_success() {
             return Err(http_error(provider, status));
         }
-        return response
-            .json()
-            .await
-            .map_err(|_| format!("{provider} sent an unexpected answer"));
+        match response.json().await {
+            Ok(answer) => return Ok(answer),
+            Err(_) if attempt == 0 => {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            Err(_) => return Err(format!("{provider} sent an incomplete answer, try again")),
+        }
     }
     Err(format!("{provider} did not answer"))
 }
@@ -777,5 +785,80 @@ mod tests {
         let request = server.join().unwrap();
         assert!(request.contains("Hello"));
         assert!(!request.contains("spotify:track"));
+    }
+
+    #[test]
+    fn an_answer_cut_short_is_retried() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            // The provider drops the first answer halfway through its body.
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let _ = stream.read(&mut buffer).unwrap();
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 60\r\nConnection: close\r\n\r\n{\"choices\":[",
+                )
+                .unwrap();
+            drop(stream);
+            // The retry carries the whole answer.
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let _ = stream.read(&mut buffer).unwrap();
+            let body = "{\"choices\":[{\"message\":{\"content\":\"[{\\\"n\\\":0,\\\"t\\\":\\\"Hola\\\"}]\"}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = reqwest::Client::new();
+        let lines = vec!["Hello".to_string()];
+        let translated = runtime.block_on(async {
+            let api = format!("http://{address}");
+            openrouter_translate(&client, "secret-key", "model", "es", &lines, &api)
+                .await
+                .unwrap()
+        });
+        assert_eq!(translated, vec![(0, "Hola".to_string())]);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_null_answer_is_not_an_unexpected_one() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let _ = stream.read(&mut buffer).unwrap();
+            let body = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = reqwest::Client::new();
+        let lines = vec!["Hello".to_string()];
+        let error = runtime.block_on(async {
+            let api = format!("http://{address}");
+            openrouter_translate(&client, "secret-key", "model", "es", &lines, &api)
+                .await
+                .unwrap_err()
+        });
+        assert_eq!(error, "the model did not answer with a list of lines");
+        server.join().unwrap();
     }
 }
