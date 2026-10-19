@@ -4096,11 +4096,15 @@ impl Worker {
         let key_path = self.dirs.translation_key_file();
         tokio::spawn(async move {
             let result = Worker::translation_job(http, key_path, cache_dir, &request).await;
-            let _ = events.send(Event::LyricsTranslation {
-                uri: request.uri,
-                result,
-            });
-            waker.wake();
+            // A prefetch only warms the cache: the panel has not asked for
+            // these words and must not show them for the playing song.
+            if !request.prefetch {
+                let _ = events.send(Event::LyricsTranslation {
+                    uri: request.uri,
+                    result,
+                });
+                waker.wake();
+            }
         });
     }
 
@@ -7285,6 +7289,49 @@ mod authorization_tests {
             Waker::default(),
         );
         (runtime, worker, events)
+    }
+
+    /// A translation fetched ahead of time only warms the cache: the panel
+    /// hears nothing about it, while its own requests are answered as usual.
+    #[test]
+    fn a_prefetched_translation_reports_nothing_to_the_panel() {
+        // #given no key is saved, so a translation job ends at once
+        let (runtime, worker, events) = worker("translation-prefetch");
+        let request = |prefetch: bool| crate::lyrics_translation::Request {
+            uri: "spotify:track:next".into(),
+            lines: vec!["Hello".into()],
+            language: "es".into(),
+            provider: crate::settings::TranslateProvider::OpenRouter,
+            model: None,
+            prefetch,
+        };
+
+        // #when the words are translated ahead of time
+        runtime.block_on(async {
+            worker.translate_lyrics(request(true));
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+
+        // #then the panel hears nothing
+        assert!(
+            events.try_iter().next().is_none(),
+            "a prefetch belongs in the cache, not the interface"
+        );
+
+        // #when the panel asks for the same words
+        runtime.block_on(async {
+            worker.translate_lyrics(request(false));
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+
+        // #then its answer arrives as usual
+        match events.try_iter().next().expect("an answer") {
+            Event::LyricsTranslation { uri, result } => {
+                assert_eq!(uri, "spotify:track:next");
+                assert!(result.is_err());
+            }
+            _ => panic!("only the translation was expected"),
+        }
     }
 
     #[test]

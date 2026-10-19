@@ -29,6 +29,9 @@ feature lives here. Everything else tracks upstream; the branch is
   lyrics cache directory as `translation-<sha1>.json`. They are kept between
   sessions, so a song is only sent to the provider once, until you clear them
   from **Settings → Storage → Lyric translations → Clear translations**.
+- The words of the next song in the queue are fetched, and translated when
+  the translator is on, while the current song plays, so a new song shows
+  them at once. This only happens while a lyrics view is open.
 
 ## Privacy
 
@@ -46,6 +49,10 @@ feature lives here. Everything else tracks upstream; the branch is
   translation state.
 - The cache holds the lyric lines and their translations in the clear, like
   the lyrics cache upstream already does.
+- The next song's lines are sent to the provider ahead of time while a
+  lyrics view is open and the translator is on, so its translation is ready
+  when it starts. They are cached like any other translation, and the
+  prefetch is skipped when the translator is off or offline.
 
 ## Files this fork adds or changes
 

@@ -91,6 +91,9 @@ pub struct Request {
     pub provider: TranslateProvider,
     /// Empty picks the first free model the provider lists.
     pub model: Option<String>,
+    /// The panel did not ask for this: it warms the cache for a song that has
+    /// not started, so no answer is sent to the interface.
+    pub prefetch: bool,
 }
 
 /// The language the picker's System entry resolves to, as an ISO 639-1 code.
@@ -720,6 +723,7 @@ mod tests {
             language: "es".into(),
             provider: TranslateProvider::OpenRouter,
             model: None,
+            prefetch: false,
         };
         let key = cache_key(&request, "model-one", "es");
         assert_eq!(key, cache_key(&request, "model-one", "es"));
@@ -744,6 +748,7 @@ mod tests {
             language: "es".into(),
             provider: TranslateProvider::OpenRouter,
             model: None,
+            prefetch: false,
         };
         let stored = vec![Some("Hola".to_string()), Some("Adiós".to_string())];
         store(&cache, &request, "model-one", "es", &stored);
