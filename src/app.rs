@@ -17,6 +17,7 @@ use crate::backend::{
     PLAYLIST_PAGE_SIZE, PlaylistCacheRows, RecentsFor, RemoteAction, Waker,
 };
 use crate::i18n::{Locale, gettext, ngettext};
+use crate::lyrics_translation::Request as TranslationRequest;
 use crate::model::QueueTab;
 use crate::model::*;
 use crate::paths::AppDirs;
@@ -505,6 +506,15 @@ pub struct App {
     /// the first line), so it moves once per change; `None` until it has
     /// positioned itself at all for this track.
     pub lyrics_line_shown: Option<Option<usize>>,
+    /// The translation of those lines, aligned by index, when the lyrics
+    /// translator is on.
+    pub lyrics_translation: Loadable<Vec<Option<String>>>,
+    /// The track `lyrics_translation` is for.
+    pub lyrics_translation_uri: Option<String>,
+    /// Whether the lyrics translator's API key is saved.
+    pub translation_key_present: bool,
+    /// The free models the translator's provider listed last time.
+    pub translation_models: Loadable<Vec<crate::lyrics_translation::ModelInfo>>,
     pub show_devices: bool,
     pub toasts: Vec<Toast>,
     pub actions: Vec<Action>,
@@ -794,6 +804,8 @@ impl App {
             *shared = eq_settings(&settings);
         }
         let applied_proxy_preferences = settings.proxy_preferences();
+        let translation_key_present =
+            crate::lyrics_translation::key_present(&dirs.translation_key_file());
         let applied_proxy = match settings.proxy_config() {
             Ok(proxy) => proxy,
             Err(error) => crate::settings::ProxyConfig::Invalid(error),
@@ -1013,6 +1025,10 @@ impl App {
             lyrics: Loadable::NotLoaded,
             lyrics_following: true,
             lyrics_line_shown: None,
+            lyrics_translation: Loadable::NotLoaded,
+            lyrics_translation_uri: None,
+            translation_key_present,
+            translation_models: Loadable::NotLoaded,
             show_devices: false,
             toasts: Vec::new(),
             actions: Vec::new(),
@@ -2121,8 +2137,65 @@ impl App {
                             Ok(found) => Loadable::Loaded(found),
                             Err(error) => Loadable::Failed(error),
                         };
+                        self.request_translation();
                     }
                 }
+                Event::LyricsTranslation { uri, result } => {
+                    if self.lyrics_translation_uri.as_deref() == Some(uri.as_str()) {
+                        self.lyrics_translation = match result {
+                            Ok(lines) => Loadable::Loaded(lines),
+                            Err(error) => {
+                                let message = gettext(self.locale, "Translation failed: {error}")
+                                    .replace("{error}", &error);
+                                self.toast_error(message);
+                                Loadable::Failed(error)
+                            }
+                        };
+                    }
+                }
+                Event::TranslationModels { provider, result } => {
+                    if provider == self.settings.lyrics_translate_provider {
+                        self.translation_models = Loadable::from_result(result);
+                        // A model the list no longer offers, or none chosen,
+                        // falls back to the first free one.
+                        let current = self.settings.lyrics_translate_model.clone();
+                        let defaulted = match &self.translation_models {
+                            Loadable::Loaded(models) => match current {
+                                Some(model)
+                                    if models.iter().any(|candidate| candidate.id == model) =>
+                                {
+                                    None
+                                }
+                                _ => models.first().map(|model| model.id.clone()),
+                            },
+                            _ => None,
+                        };
+                        if let Some(model) = defaulted {
+                            self.settings.lyrics_translate_model = Some(model);
+                            self.settings_dirty = true;
+                            self.request_translation();
+                        }
+                    }
+                }
+                Event::TranslationKeyStored { result } => match result {
+                    Ok(present) => {
+                        self.translation_key_present = present;
+                        if present {
+                            self.toast(gettext(self.locale, "API key saved"));
+                            self.translation_models = Loadable::NotLoaded;
+                            self.backend.send(Command::TranslationModels {
+                                provider: self.settings.lyrics_translate_provider,
+                            });
+                            self.request_translation();
+                        } else {
+                            self.toast(gettext(self.locale, "API key removed"));
+                            self.translation_models = Loadable::NotLoaded;
+                            self.lyrics_translation = Loadable::NotLoaded;
+                            self.lyrics_translation_uri = None;
+                        }
+                    }
+                    Err(error) => self.toast_error(error),
+                },
                 Event::PlaylistCache {
                     account_id,
                     id,
@@ -3108,6 +3181,8 @@ impl App {
         self.lyrics_uri = Some(now.uri.clone());
         self.lyrics_following = true;
         self.lyrics_line_shown = None;
+        self.lyrics_translation = Loadable::NotLoaded;
+        self.lyrics_translation_uri = None;
         if now.is_episode || self.offline {
             self.lyrics = Loadable::Loaded(None);
             return;
@@ -3126,6 +3201,45 @@ impl App {
                 duration_ms: now.duration_ms,
             },
         })));
+    }
+
+    /// Asks for a translation of the loaded words when the lyrics translator
+    /// is on and an API key is saved. The answer is aligned by line index.
+    pub fn request_translation(&mut self) {
+        let Some(now) = self.now_playing() else {
+            return;
+        };
+        let lines: Vec<String> = match &self.lyrics {
+            Loadable::Loaded(Some(lyrics)) if !lyrics.lines.is_empty() => {
+                lyrics.lines.iter().map(|line| line.text.clone()).collect()
+            }
+            _ => return,
+        };
+        if !self.settings.lyrics_translate || !self.translation_key_present {
+            return;
+        }
+        if self.lyrics_translation_uri.as_deref() == Some(now.uri.as_str())
+            && !matches!(
+                self.lyrics_translation,
+                Loadable::NotLoaded | Loadable::Failed(_)
+            )
+        {
+            return;
+        }
+        self.lyrics_translation_uri = Some(now.uri.clone());
+        self.lyrics_translation = Loadable::Loading;
+        self.backend
+            .send(Command::TranslateLyrics(Box::new(TranslationRequest {
+                uri: now.uri,
+                lines,
+                language: self.settings.lyrics_translate_language.clone(),
+                provider: self.settings.lyrics_translate_provider,
+                model: self
+                    .settings
+                    .lyrics_translate_model
+                    .clone()
+                    .filter(|model| !model.trim().is_empty()),
+            })));
     }
 
     /// Pushes the Winamp window's always-on-top level to the live window.
@@ -10261,6 +10375,45 @@ impl App {
             }
             Action::PauseLyricsFollow => self.lyrics_following = false,
             Action::RetryLyrics => self.request_lyrics(),
+            Action::ToggleLyricsTranslation => {
+                self.settings.lyrics_translate = !self.settings.lyrics_translate;
+                self.settings_dirty = true;
+                if self.settings.lyrics_translate {
+                    if self.translation_key_present {
+                        self.backend.send(Command::TranslationModels {
+                            provider: self.settings.lyrics_translate_provider,
+                        });
+                        self.request_translation();
+                    } else {
+                        self.toast(gettext(
+                            self.locale,
+                            "Add an API key in Settings to translate lyrics.",
+                        ));
+                    }
+                } else {
+                    self.lyrics_translation = Loadable::NotLoaded;
+                    self.lyrics_translation_uri = None;
+                }
+            }
+            Action::LyricsTranslationChanged => {
+                self.settings_dirty = true;
+                self.lyrics_translation = Loadable::NotLoaded;
+                self.lyrics_translation_uri = None;
+                self.request_translation();
+            }
+            Action::SetTranslationKey(key) => {
+                self.backend
+                    .send(Command::SetTranslationKey { key: Some(key) });
+            }
+            Action::ClearTranslationKey => {
+                self.backend.send(Command::SetTranslationKey { key: None });
+            }
+            Action::RefreshTranslationModels => {
+                self.backend.send(Command::TranslationModels {
+                    provider: self.settings.lyrics_translate_provider,
+                });
+                self.translation_models = Loadable::Loading;
+            }
             Action::ToggleDevicesPopup => {
                 self.show_devices = !self.show_devices;
                 if self.show_devices {

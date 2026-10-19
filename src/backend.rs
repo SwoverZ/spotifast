@@ -725,6 +725,16 @@ pub enum Command {
     },
     /// The words of a track, from LRCLIB.
     Lyrics(Box<LyricsRequest>),
+    /// Free models the configured lyrics translator offers.
+    TranslationModels {
+        provider: crate::settings::TranslateProvider,
+    },
+    /// Translate the words of a track for the lyrics translator.
+    TranslateLyrics(Box<crate::lyrics_translation::Request>),
+    /// Store or remove the lyrics translator's API key.
+    SetTranslationKey {
+        key: Option<String>,
+    },
     /// The account's playlist tree, folders and all, from the session.
     Rootlist,
     /// Internal: a rootlist read completed for this signed-in session.
@@ -886,6 +896,21 @@ pub enum Event {
     Lyrics {
         uri: String,
         result: Result<Option<crate::lyrics::Lyrics>, String>,
+    },
+    /// The free models the lyrics translator's provider offers.
+    TranslationModels {
+        provider: crate::settings::TranslateProvider,
+        result: Result<Vec<crate::lyrics_translation::ModelInfo>, String>,
+    },
+    /// A translation of the track's lyric lines, or why there is none.
+    LyricsTranslation {
+        uri: String,
+        result: Result<Vec<Option<String>>, String>,
+    },
+    /// The lyrics translator's API key was saved or removed; `true` when it
+    /// is now present.
+    TranslationKeyStored {
+        result: Result<bool, String>,
     },
     /// The account's playlist tree, folders and all, and which of its
     /// playlists take songs from this account.
@@ -2262,6 +2287,11 @@ impl Worker {
                     });
                 }
                 Command::Lyrics(request) => self.fetch_lyrics(*request),
+                Command::TranslationModels { provider } => {
+                    self.fetch_translation_models(provider);
+                }
+                Command::TranslateLyrics(request) => self.translate_lyrics(*request),
+                Command::SetTranslationKey { key } => self.store_translation_key(key),
                 Command::Rootlist => self.fetch_rootlist(),
                 Command::RootlistFinished { generation, result } => {
                     self.on_rootlist_finished(generation, result);
@@ -4034,6 +4064,111 @@ impl Worker {
                 uri: request.uri,
                 result,
             });
+            waker.wake();
+        });
+    }
+
+    fn fetch_translation_models(&self, provider: crate::settings::TranslateProvider) {
+        let http = self.http.client();
+        let events = self.events.clone();
+        let waker = self.waker.clone();
+        let key_path = self.dirs.translation_key_file();
+        tokio::spawn(async move {
+            let result = match http {
+                Ok(http) => match crate::lyrics_translation::read_key(&key_path) {
+                    Some(key) => {
+                        crate::lyrics_translation::free_models(&http, provider, &key).await
+                    }
+                    None => Err("add an API key in Settings first".into()),
+                },
+                Err(error) => Err(error),
+            };
+            let _ = events.send(Event::TranslationModels { provider, result });
+            waker.wake();
+        });
+    }
+
+    fn translate_lyrics(&self, request: crate::lyrics_translation::Request) {
+        let http = self.http.client();
+        let events = self.events.clone();
+        let waker = self.waker.clone();
+        let cache_dir = self.dirs.lyrics_cache_dir();
+        let key_path = self.dirs.translation_key_file();
+        tokio::spawn(async move {
+            let result = Worker::translation_job(http, key_path, cache_dir, &request).await;
+            let _ = events.send(Event::LyricsTranslation {
+                uri: request.uri,
+                result,
+            });
+            waker.wake();
+        });
+    }
+
+    async fn translation_job(
+        http: Result<reqwest::Client, String>,
+        key_path: std::path::PathBuf,
+        cache_dir: std::path::PathBuf,
+        request: &crate::lyrics_translation::Request,
+    ) -> Result<Vec<Option<String>>, String> {
+        let http = http?;
+        let key = crate::lyrics_translation::read_key(&key_path)
+            .ok_or_else(|| "add an API key in Settings first".to_string())?;
+        let language = crate::lyrics_translation::resolve_language(&request.language);
+        let model = match request
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        {
+            Some(model) => model.to_string(),
+            None => crate::lyrics_translation::free_models(&http, request.provider, &key)
+                .await?
+                .into_iter()
+                .next()
+                .map(|model| model.id)
+                .ok_or_else(|| "the provider lists no free models".to_string())?,
+        };
+        if let Some(cached) =
+            crate::lyrics_translation::cached(&cache_dir, request, &model, &language)
+        {
+            return Ok(cached);
+        }
+        let lines = crate::lyrics_translation::translate_lines(
+            &http,
+            request.provider,
+            &key,
+            &model,
+            &language,
+            &request.lines,
+        )
+        .await?;
+        crate::lyrics_translation::store(&cache_dir, request, &model, &language, &lines);
+        Ok(lines)
+    }
+
+    fn store_translation_key(&self, key: Option<String>) {
+        let path = self.dirs.translation_key_file();
+        let events = self.events.clone();
+        let waker = self.waker.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = match key {
+                Some(key) => {
+                    let key = key.trim();
+                    if key.is_empty() {
+                        Err("the API key is empty".to_string())
+                    } else {
+                        fastframe_file::write_private(&path, key.as_bytes())
+                            .map(|_| true)
+                            .map_err(|error| format!("unable to save the API key: {error}"))
+                    }
+                }
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => Ok(false),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                    Err(error) => Err(format!("unable to remove the API key: {error}")),
+                },
+            };
+            let _ = events.send(Event::TranslationKeyStored { result });
             waker.wake();
         });
     }

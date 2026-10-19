@@ -1204,6 +1204,16 @@ pub enum Action {
     FollowLyrics,
     PauseLyricsFollow,
     RetryLyrics,
+    /// Turn the lyrics translator on or off from a lyrics view.
+    ToggleLyricsTranslation,
+    /// The translator's provider, model or language changed in Settings.
+    LyricsTranslationChanged,
+    /// Save the lyrics translator's API key, in the owner-only file.
+    SetTranslationKey(String),
+    /// Remove the saved lyrics translator API key.
+    ClearTranslationKey,
+    /// Ask the provider for its free models again.
+    RefreshTranslationModels,
     ToggleDevicesPopup,
     /// Ask GitHub for the latest release and report the result to the user.
     CheckForUpdates,
