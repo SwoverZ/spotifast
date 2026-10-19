@@ -6,7 +6,7 @@ msgstr ""
 "Project-Id-Version: Spotifast\n"
 "Report-Msgid-Bugs-To: https://github.com/crmne/spotifast/issues/new?"
 "template=translation.yml\n"
-"POT-Creation-Date: 2026-10-19 01:23-0600\n"
+"POT-Creation-Date: 2026-10-19 10:52-0600\n"
 "PO-Revision-Date: 2026-09-09 13:30+0000\n"
 "Last-Translator: Spotifast contributors\n"
 "Language-Team: French\n"
@@ -28,12 +28,12 @@ msgstr "Mettre en pause {name}"
 msgid "Play {name}"
 msgstr "Lire {name}"
 
-#: src/ui/sidebar.rs:302 src/app.rs:2889 src/app.rs:19498
+#: src/ui/sidebar.rs:302 src/app.rs:2889 src/app.rs:19508
 #: src/ui/collection.rs:1919 src/ui/collection.rs:2134
 msgid "Playlist"
 msgstr "Playlist"
 
-#: src/ui/sidebar.rs:312 src/app.rs:2863 src/app.rs:19503
+#: src/ui/sidebar.rs:312 src/app.rs:2863 src/app.rs:19513
 #: src/ui/collection.rs:2127 src/ui/home.rs:78 src/ui/keys.rs:264
 #: src/ui/winamp/playlist.rs:653
 msgid "Liked Songs"
@@ -432,7 +432,7 @@ msgstr "Aucune parole synchronisée pour ce titre."
 msgid "Translating lyrics…"
 msgstr "Traduction des paroles…"
 
-#: src/ui/lyrics.rs:466 src/ui/widgets.rs:2638 src/app.rs:11817
+#: src/ui/lyrics.rs:466 src/ui/widgets.rs:2638 src/app.rs:11827
 #: src/ui/collection.rs:813
 msgid "Loading…"
 msgstr "Chargement…"
@@ -609,7 +609,7 @@ msgstr "DATE D’AJOUT"
 msgid "Sort by duration"
 msgstr "Trier par durée"
 
-#: src/ui/widgets.rs:2649 src/app.rs:11988 src/app.rs:12002
+#: src/ui/widgets.rs:2649 src/app.rs:11998 src/app.rs:12012
 msgid "Network connection error. Check your connection."
 msgstr "Erreur de connexion réseau. Vérifiez votre connexion."
 
@@ -795,7 +795,7 @@ msgid "Queue cleared"
 msgstr "File d’attente vidée"
 
 #. Translators: Keep {date} unchanged. It is a date in YYYY-MM-DD form.
-#: src/app.rs:5433 src/app.rs:19488
+#: src/app.rs:5433 src/app.rs:19498
 #, rust-format
 msgid "Queue {date}"
 msgstr "File d’attente {date}"
@@ -1072,49 +1072,59 @@ msgstr "{size} Mo de pochettes effacés"
 msgid "Couldn't clear artwork: {error}"
 msgstr "Impossible d’effacer les pochettes : {error}"
 
-#: src/app.rs:10846
+#: src/app.rs:10678
+msgid "Translations cleared"
+msgstr "Traductions effacées"
+
+#. Translators: {error} is an error message.
+#: src/app.rs:10681
+#, rust-format
+msgid "Couldn't clear translations: {error}"
+msgstr "Impossible d'effacer les traductions : {error}"
+
+#: src/app.rs:10856
 msgid "Downloading MilkDrop preset packs"
 msgstr "Téléchargement des packs de presets MilkDrop"
 
 #. Translators: {name} is the name of a visualizer preset pack.
-#: src/app.rs:10880
+#: src/app.rs:10890
 #, rust-format
 msgid "Downloading {name} presets"
 msgstr "Téléchargement des presets {name}"
 
-#: src/app.rs:11929
+#: src/app.rs:11939
 msgid "Couldn't start playback"
 msgstr "Impossible de lancer la lecture"
 
-#: src/app.rs:11930
+#: src/app.rs:11940
 msgid "Couldn't pause"
 msgstr "Impossible de mettre en pause"
 
-#: src/app.rs:11931
+#: src/app.rs:11941
 msgid "Couldn't skip"
 msgstr "Impossible de passer au suivant"
 
-#: src/app.rs:11932
+#: src/app.rs:11942
 msgid "Couldn't go back"
 msgstr "Impossible de revenir en arrière"
 
-#: src/app.rs:11933
+#: src/app.rs:11943
 msgid "Couldn't seek"
 msgstr "Impossible de changer la position"
 
-#: src/app.rs:11934
+#: src/app.rs:11944
 msgid "Couldn't change the volume"
 msgstr "Impossible de changer le volume"
 
-#: src/app.rs:11935
+#: src/app.rs:11945
 msgid "Couldn't change shuffle"
 msgstr "Impossible de changer la lecture aléatoire"
 
-#: src/app.rs:11936
+#: src/app.rs:11946
 msgid "Couldn't change repeat"
 msgstr "Impossible de changer la répétition"
 
-#: src/app.rs:11979
+#: src/app.rs:11989
 msgid ""
 "No audio output device was found. Connect or enable one, then press play "
 "again."
@@ -1122,20 +1132,20 @@ msgstr ""
 "Aucun périphérique de sortie audio n’a été trouvé. Branchez-en ou activez-en "
 "un, puis appuyez de nouveau sur Lire."
 
-#: src/app.rs:11993
+#: src/app.rs:12003
 msgid ""
 "Spotify doesn't make this playlist's songs available to third-party apps."
 msgstr ""
 "Spotify ne rend pas les titres de cette playlist disponibles pour les "
 "applications tierces."
 
-#: src/app.rs:12114
+#: src/app.rs:12124
 msgid "Spotify sign-in expired. Sign in again, then retry the cover upload."
 msgstr ""
 "Votre connexion à Spotify a expiré. Reconnectez-vous, puis réessayez "
 "d’envoyer la couverture."
 
-#: src/app.rs:12119
+#: src/app.rs:12129
 msgid ""
 "Spotify refused this cover. Check that you own the playlist, then sign in "
 "again to grant image upload permission. If using a personal app, reconnect "
@@ -1145,20 +1155,20 @@ msgstr ""
 "puis reconnectez-vous pour autoriser l’envoi d’images. Si vous utilisez une "
 "application personnelle, reconnectez-la aussi dans les Paramètres."
 
-#: src/app.rs:12123
+#: src/app.rs:12133
 msgid "Spotify rejected the image size. Choose a smaller image."
 msgstr ""
 "Spotify a refusé la taille de l’image. Choisissez une image plus petite."
 
 #. Translators: {error} is an error message.
-#: src/app.rs:12126
+#: src/app.rs:12136
 #, rust-format
 msgid "Couldn't upload the cover: {error}. Try again."
 msgstr "Impossible d’envoyer la couverture : {error}. Réessayez."
 
 #. Translators: Keep {track} unchanged. It is the name of the song,
 #. playlist, album, or artist the radio is based on, not translated.
-#: src/app.rs:19508 src/app/radio.rs:38
+#: src/app.rs:19518 src/app/radio.rs:38
 #, rust-format
 msgid "{track} Radio"
 msgstr "Radio de {track}"
@@ -1519,7 +1529,7 @@ msgid "Follow system uses your desktop's light or dark appearance."
 msgstr ""
 "Suivre le système utilise l’apparence claire ou sombre de votre bureau."
 
-#: src/ui/settings.rs:904 src/ui/settings.rs:1307 src/ui/settings.rs:2303
+#: src/ui/settings.rs:904 src/ui/settings.rs:1307 src/ui/settings.rs:2322
 msgid "Language"
 msgstr "Langue"
 
@@ -1988,77 +1998,85 @@ msgid "Artwork cache"
 msgstr "Cache des pochettes"
 
 #. Translators: {folder} is the path of a cache folder.
-#: src/ui/settings.rs:2117 src/ui/settings.rs:2123
+#: src/ui/settings.rs:2117 src/ui/settings.rs:2123 src/ui/settings.rs:2131
 #, rust-format
 msgid "Stored in {folder}"
 msgstr "Stocké dans {folder}"
 
 #: src/ui/settings.rs:2129
+msgid "Lyric translations"
+msgstr "Traductions des paroles"
+
+#: src/ui/settings.rs:2135
 msgid "Play history"
 msgstr "Historique d’écoute"
 
 #. Translators: {file} is the path of the play history file.
-#: src/ui/settings.rs:2133
+#: src/ui/settings.rs:2139
 #, rust-format
 msgid "Tracks played here are stored in {file}. This file is never uploaded."
 msgstr ""
 "Les titres écoutés ici sont stockés dans {file}. Ce fichier n’est jamais "
 "envoyé."
 
-#: src/ui/settings.rs:2138
+#: src/ui/settings.rs:2144
 msgid "Sign-in"
 msgstr "Connexion"
 
-#: src/ui/settings.rs:2141
+#: src/ui/settings.rs:2147
 msgid "Sign-ins are saved in the system credential store when available."
 msgstr ""
 "Les connexions sont enregistrées dans le gestionnaire d’identifiants du "
 "système lorsqu’il est disponible."
 
-#: src/ui/settings.rs:2153
+#: src/ui/settings.rs:2159
 msgid "Clear artwork"
 msgstr "Effacer les pochettes"
 
-#: src/ui/settings.rs:2167
+#: src/ui/settings.rs:2173
+msgid "Clear translations"
+msgstr "Effacer les traductions"
+
+#: src/ui/settings.rs:2186
 msgid "Clear history"
 msgstr "Effacer l’historique"
 
-#: src/ui/settings.rs:2179 src/ui/show.rs:36
+#: src/ui/settings.rs:2198 src/ui/show.rs:36
 msgid "About"
 msgstr "À propos"
 
-#: src/ui/settings.rs:2182
+#: src/ui/settings.rs:2201
 msgid "Built with Rust, egui, and librespot. Not affiliated with Spotify."
 msgstr "Conçu avec Rust, egui et librespot. Non affilié à Spotify."
 
-#: src/ui/settings.rs:2184
+#: src/ui/settings.rs:2203
 msgid "Check for updates"
 msgstr "Rechercher des mises à jour"
 
-#: src/ui/settings.rs:2185
+#: src/ui/settings.rs:2204
 msgid "Checking…"
 msgstr "Vérification…"
 
-#: src/ui/settings.rs:2186 src/ui/dialogs.rs:153 src/ui/keys.rs:306
+#: src/ui/settings.rs:2205 src/ui/dialogs.rs:153 src/ui/keys.rs:306
 #: src/ui/topbar.rs:479
 msgid "Keyboard shortcuts"
 msgstr "Raccourcis clavier"
 
-#: src/ui/settings.rs:2187
+#: src/ui/settings.rs:2206
 msgid "Source code"
 msgstr "Code source"
 
 #. Translators: {query} is the text typed into the settings search field.
-#: src/ui/settings.rs:2259
+#: src/ui/settings.rs:2278
 #, rust-format
 msgid "No settings for “{query}”"
 msgstr "Aucun paramètre pour « {query} »"
 
-#: src/ui/settings.rs:2260
+#: src/ui/settings.rs:2279
 msgid "Try fewer words, or check the spelling."
 msgstr "Essayez avec moins de mots ou vérifiez l’orthographe."
 
-#: src/ui/settings.rs:2276
+#: src/ui/settings.rs:2295
 msgctxt "language"
 msgid "System"
 msgstr "Système"

@@ -2126,6 +2126,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ),
         ),
         RowText::new(
+            gettext(locale, "Lyric translations"),
+            // Translators: {folder} is the path of a cache folder.
+            gettext(locale, "Stored in {folder}").replace(
+                "{folder}",
+                &app.dirs.lyrics_cache_dir().display().to_string(),
+            ),
+        ),
+        RowText::new(
             gettext(locale, "Play history"),
             gettext(
                 locale,
@@ -2164,6 +2172,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ui,
                     &palette,
                     Some(Icon::Trash),
+                    &gettext(locale, "Clear translations"),
+                    false,
+                )
+                .clicked()
+                {
+                    app.actions.push(Action::ClearTranslations);
+                }
+            });
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[3], |ui| {
+                if theme::soft_button(
+                    ui,
+                    &palette,
+                    Some(Icon::Trash),
                     &gettext(locale, "Clear history"),
                     false,
                 )
@@ -2172,7 +2193,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     app.actions.push(Action::ClearPlayHistory);
                 }
             });
-            filtered_row(ui, &palette, &needle, &storage, &storage_rows[3], |_| {});
+            filtered_row(ui, &palette, &needle, &storage, &storage_rows[4], |_| {});
         });
     }
 

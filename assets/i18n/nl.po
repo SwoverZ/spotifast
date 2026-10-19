@@ -6,7 +6,7 @@ msgstr ""
 "Project-Id-Version: Spotifast\n"
 "Report-Msgid-Bugs-To: https://github.com/crmne/spotifast/issues/new?"
 "template=translation.yml\n"
-"POT-Creation-Date: 2026-10-19 01:23-0600\n"
+"POT-Creation-Date: 2026-10-19 10:52-0600\n"
 "PO-Revision-Date: 2026-09-09 13:30+0000\n"
 "Last-Translator: Spotifast contributors\n"
 "Language-Team: Dutch\n"
@@ -28,12 +28,12 @@ msgstr "{name} pauzeren"
 msgid "Play {name}"
 msgstr "{name} afspelen"
 
-#: src/ui/sidebar.rs:302 src/app.rs:2889 src/app.rs:19498
+#: src/ui/sidebar.rs:302 src/app.rs:2889 src/app.rs:19508
 #: src/ui/collection.rs:1919 src/ui/collection.rs:2134
 msgid "Playlist"
 msgstr "Playlist"
 
-#: src/ui/sidebar.rs:312 src/app.rs:2863 src/app.rs:19503
+#: src/ui/sidebar.rs:312 src/app.rs:2863 src/app.rs:19513
 #: src/ui/collection.rs:2127 src/ui/home.rs:78 src/ui/keys.rs:264
 #: src/ui/winamp/playlist.rs:653
 msgid "Liked Songs"
@@ -432,7 +432,7 @@ msgstr "Geen gesynchroniseerde songtekst voor dit nummer."
 msgid "Translating lyrics…"
 msgstr "Songteksten worden vertaald…"
 
-#: src/ui/lyrics.rs:466 src/ui/widgets.rs:2638 src/app.rs:11817
+#: src/ui/lyrics.rs:466 src/ui/widgets.rs:2638 src/app.rs:11827
 #: src/ui/collection.rs:813
 msgid "Loading…"
 msgstr "Laden…"
@@ -609,7 +609,7 @@ msgstr "DATUM TOEGEVOEGD"
 msgid "Sort by duration"
 msgstr "Sorteren op duur"
 
-#: src/ui/widgets.rs:2649 src/app.rs:11988 src/app.rs:12002
+#: src/ui/widgets.rs:2649 src/app.rs:11998 src/app.rs:12012
 msgid "Network connection error. Check your connection."
 msgstr "Netwerkverbindingsfout. Controleer je verbinding."
 
@@ -795,7 +795,7 @@ msgid "Queue cleared"
 msgstr "Wachtrij gewist"
 
 #. Translators: Keep {date} unchanged. It is a date in YYYY-MM-DD form.
-#: src/app.rs:5433 src/app.rs:19488
+#: src/app.rs:5433 src/app.rs:19498
 #, rust-format
 msgid "Queue {date}"
 msgstr "Wachtrij {date}"
@@ -1071,49 +1071,59 @@ msgstr "{size} MB aan covers gewist"
 msgid "Couldn't clear artwork: {error}"
 msgstr "Kan covers niet wissen: {error}"
 
-#: src/app.rs:10846
+#: src/app.rs:10678
+msgid "Translations cleared"
+msgstr "Vertalingen gewist"
+
+#. Translators: {error} is an error message.
+#: src/app.rs:10681
+#, rust-format
+msgid "Couldn't clear translations: {error}"
+msgstr "Vertalingen konden niet worden gewist: {error}"
+
+#: src/app.rs:10856
 msgid "Downloading MilkDrop preset packs"
 msgstr "MilkDrop-presetpakketten worden gedownload"
 
 #. Translators: {name} is the name of a visualizer preset pack.
-#: src/app.rs:10880
+#: src/app.rs:10890
 #, rust-format
 msgid "Downloading {name} presets"
 msgstr "Presets van {name} worden gedownload"
 
-#: src/app.rs:11929
+#: src/app.rs:11939
 msgid "Couldn't start playback"
 msgstr "Kan afspelen niet starten"
 
-#: src/app.rs:11930
+#: src/app.rs:11940
 msgid "Couldn't pause"
 msgstr "Kan niet pauzeren"
 
-#: src/app.rs:11931
+#: src/app.rs:11941
 msgid "Couldn't skip"
 msgstr "Kan niet overslaan"
 
-#: src/app.rs:11932
+#: src/app.rs:11942
 msgid "Couldn't go back"
 msgstr "Kan niet teruggaan"
 
-#: src/app.rs:11933
+#: src/app.rs:11943
 msgid "Couldn't seek"
 msgstr "Kan niet spoelen"
 
-#: src/app.rs:11934
+#: src/app.rs:11944
 msgid "Couldn't change the volume"
 msgstr "Kan het volume niet wijzigen"
 
-#: src/app.rs:11935
+#: src/app.rs:11945
 msgid "Couldn't change shuffle"
 msgstr "Kan willekeurige volgorde niet wijzigen"
 
-#: src/app.rs:11936
+#: src/app.rs:11946
 msgid "Couldn't change repeat"
 msgstr "Kan herhalen niet wijzigen"
 
-#: src/app.rs:11979
+#: src/app.rs:11989
 msgid ""
 "No audio output device was found. Connect or enable one, then press play "
 "again."
@@ -1121,20 +1131,20 @@ msgstr ""
 "Er is geen audio-uitvoerapparaat gevonden. Sluit er een aan of schakel er "
 "een in en druk dan opnieuw op Afspelen."
 
-#: src/app.rs:11993
+#: src/app.rs:12003
 msgid ""
 "Spotify doesn't make this playlist's songs available to third-party apps."
 msgstr ""
 "Spotify stelt de nummers van deze playlist niet beschikbaar voor apps van "
 "derden."
 
-#: src/app.rs:12114
+#: src/app.rs:12124
 msgid "Spotify sign-in expired. Sign in again, then retry the cover upload."
 msgstr ""
 "Spotify-aanmelding verlopen. Log opnieuw in en probeer de cover dan opnieuw "
 "te uploaden."
 
-#: src/app.rs:12119
+#: src/app.rs:12129
 msgid ""
 "Spotify refused this cover. Check that you own the playlist, then sign in "
 "again to grant image upload permission. If using a personal app, reconnect "
@@ -1144,20 +1154,20 @@ msgstr ""
 "log opnieuw in om toestemming te geven voor het uploaden van afbeeldingen. "
 "Gebruik je een persoonlijke app, verbind die dan ook opnieuw in Instellingen."
 
-#: src/app.rs:12123
+#: src/app.rs:12133
 msgid "Spotify rejected the image size. Choose a smaller image."
 msgstr ""
 "Spotify heeft de afbeeldingsgrootte geweigerd. Kies een kleinere afbeelding."
 
 #. Translators: {error} is an error message.
-#: src/app.rs:12126
+#: src/app.rs:12136
 #, rust-format
 msgid "Couldn't upload the cover: {error}. Try again."
 msgstr "Kan de cover niet uploaden: {error}. Probeer het opnieuw."
 
 #. Translators: Keep {track} unchanged. It is the name of the song,
 #. playlist, album, or artist the radio is based on, not translated.
-#: src/app.rs:19508 src/app/radio.rs:38
+#: src/app.rs:19518 src/app/radio.rs:38
 #, rust-format
 msgid "{track} Radio"
 msgstr "Radio op basis van {track}"
@@ -1518,7 +1528,7 @@ msgid "Follow system uses your desktop's light or dark appearance."
 msgstr ""
 "“Systeem volgen” gebruikt de lichte of donkere weergave van je bureaublad."
 
-#: src/ui/settings.rs:904 src/ui/settings.rs:1307 src/ui/settings.rs:2303
+#: src/ui/settings.rs:904 src/ui/settings.rs:1307 src/ui/settings.rs:2322
 msgid "Language"
 msgstr "Taal"
 
@@ -1976,77 +1986,85 @@ msgid "Artwork cache"
 msgstr "Covercache"
 
 #. Translators: {folder} is the path of a cache folder.
-#: src/ui/settings.rs:2117 src/ui/settings.rs:2123
+#: src/ui/settings.rs:2117 src/ui/settings.rs:2123 src/ui/settings.rs:2131
 #, rust-format
 msgid "Stored in {folder}"
 msgstr "Opgeslagen in {folder}"
 
 #: src/ui/settings.rs:2129
+msgid "Lyric translations"
+msgstr "Songtekstvertalingen"
+
+#: src/ui/settings.rs:2135
 msgid "Play history"
 msgstr "Afspeelgeschiedenis"
 
 #. Translators: {file} is the path of the play history file.
-#: src/ui/settings.rs:2133
+#: src/ui/settings.rs:2139
 #, rust-format
 msgid "Tracks played here are stored in {file}. This file is never uploaded."
 msgstr ""
 "Nummers die hier worden afgespeeld, worden opgeslagen in {file}. Dit bestand "
 "wordt nooit geüpload."
 
-#: src/ui/settings.rs:2138
+#: src/ui/settings.rs:2144
 msgid "Sign-in"
 msgstr "Inloggen"
 
-#: src/ui/settings.rs:2141
+#: src/ui/settings.rs:2147
 msgid "Sign-ins are saved in the system credential store when available."
 msgstr ""
 "Aanmeldingen worden opgeslagen in de wachtwoordopslag van het systeem als "
 "die beschikbaar is."
 
-#: src/ui/settings.rs:2153
+#: src/ui/settings.rs:2159
 msgid "Clear artwork"
 msgstr "Covers wissen"
 
-#: src/ui/settings.rs:2167
+#: src/ui/settings.rs:2173
+msgid "Clear translations"
+msgstr "Vertalingen wissen"
+
+#: src/ui/settings.rs:2186
 msgid "Clear history"
 msgstr "Geschiedenis wissen"
 
-#: src/ui/settings.rs:2179 src/ui/show.rs:36
+#: src/ui/settings.rs:2198 src/ui/show.rs:36
 msgid "About"
 msgstr "Over"
 
-#: src/ui/settings.rs:2182
+#: src/ui/settings.rs:2201
 msgid "Built with Rust, egui, and librespot. Not affiliated with Spotify."
 msgstr "Gemaakt met Rust, egui en librespot. Niet verbonden aan Spotify."
 
-#: src/ui/settings.rs:2184
+#: src/ui/settings.rs:2203
 msgid "Check for updates"
 msgstr "Controleren op updates"
 
-#: src/ui/settings.rs:2185
+#: src/ui/settings.rs:2204
 msgid "Checking…"
 msgstr "Controleren…"
 
-#: src/ui/settings.rs:2186 src/ui/dialogs.rs:153 src/ui/keys.rs:306
+#: src/ui/settings.rs:2205 src/ui/dialogs.rs:153 src/ui/keys.rs:306
 #: src/ui/topbar.rs:479
 msgid "Keyboard shortcuts"
 msgstr "Sneltoetsen"
 
-#: src/ui/settings.rs:2187
+#: src/ui/settings.rs:2206
 msgid "Source code"
 msgstr "Broncode"
 
 #. Translators: {query} is the text typed into the settings search field.
-#: src/ui/settings.rs:2259
+#: src/ui/settings.rs:2278
 #, rust-format
 msgid "No settings for “{query}”"
 msgstr "Geen instellingen voor “{query}”"
 
-#: src/ui/settings.rs:2260
+#: src/ui/settings.rs:2279
 msgid "Try fewer words, or check the spelling."
 msgstr "Probeer minder woorden of controleer de spelling."
 
-#: src/ui/settings.rs:2276
+#: src/ui/settings.rs:2295
 msgctxt "language"
 msgid "System"
 msgstr "Systeem"

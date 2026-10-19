@@ -19,11 +19,12 @@ use crate::settings::TranslateProvider;
 
 const OPENROUTER_API: &str = "https://openrouter.ai/api/v1";
 const GOOGLE_API: &str = "https://generativelanguage.googleapis.com/v1beta";
-/// A translation of a fixed set of lines does not change.
-const CACHE_LIFETIME: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 /// Free models count tokens per minute, so a long song is translated in
 /// batches rather than one request per line or one giant request.
 const MAX_LINES_PER_REQUEST: usize = 60;
+/// Cached translations live in the lyrics cache under this prefix, so
+/// clearing them leaves the rest of the folder alone.
+const CACHE_PREFIX: &str = "translation-";
 
 /// The languages the picker offers, as ISO 639-1 codes and their names in the
 /// language itself, so a reader can find theirs whatever the app displays.
@@ -574,7 +575,7 @@ struct Cached {
 
 fn cache_path(cache_dir: &Path, request: &Request, model: &str, language: &str) -> PathBuf {
     cache_dir.join(format!(
-        "translation-{}.json",
+        "{CACHE_PREFIX}{}.json",
         cache_key(request, model, language)
     ))
 }
@@ -599,7 +600,9 @@ fn cache_key(request: &Request, model: &str, language: &str) -> String {
         .collect()
 }
 
-/// The cached translation for this request, while it is fresh.
+/// The cached translation for this request. It is kept until the listener
+/// clears the translations from Settings, so a song is only ever sent to the
+/// provider once per language, provider, and model.
 pub fn cached(
     cache_dir: &Path,
     request: &Request,
@@ -607,15 +610,35 @@ pub fn cached(
     language: &str,
 ) -> Option<Vec<Option<String>>> {
     let path = cache_path(cache_dir, request, model, language);
-    let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
-    if modified.elapsed().unwrap_or(CACHE_LIFETIME) >= CACHE_LIFETIME {
-        return None;
-    }
     let text = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str::<Cached>(&text)
         .ok()
         .map(|cached| cached.lines)
         .filter(|lines| lines.len() == request.lines.len())
+}
+
+/// Removes every cached translation and says how many went. A cache folder
+/// that is not there counts as none.
+pub fn clear(cache_dir: &Path) -> Result<usize, std::io::Error> {
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(CACHE_PREFIX) || !name.ends_with(".json") {
+            continue;
+        }
+        std::fs::remove_file(entry.path())?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 /// Remembers a translation. Queued from a background task; never the UI thread.
@@ -705,6 +728,55 @@ mod tests {
         let mut other = request.clone();
         other.lines = vec!["Goodbye".into()];
         assert_ne!(key, cache_key(&other, "model-one", "es"));
+    }
+
+    #[test]
+    fn a_stored_translation_is_kept_for_good_and_can_be_cleared() {
+        let root = std::env::temp_dir().join(format!(
+            "spotifast-translation-cache-test-{}",
+            std::process::id()
+        ));
+        let cache = root.join("lyrics");
+        std::fs::create_dir_all(&cache).expect("a cache folder");
+        let request = Request {
+            uri: "spotify:track:one".into(),
+            lines: vec!["Hello".into(), "Goodbye".into()],
+            language: "es".into(),
+            provider: TranslateProvider::OpenRouter,
+            model: None,
+        };
+        let stored = vec![Some("Hola".to_string()), Some("Adiós".to_string())];
+        store(&cache, &request, "model-one", "es", &stored);
+
+        // #then it comes back untouched
+        assert_eq!(
+            cached(&cache, &request, "model-one", "es"),
+            Some(stored.clone())
+        );
+
+        // #when it has sat there past any expiry date
+        let path = cache_path(&cache, &request, "model-one", "es");
+        let file = std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("the cache file");
+        file.set_modified(std::time::SystemTime::now() - Duration::from_secs(400 * 24 * 60 * 60))
+            .expect("an old timestamp");
+        drop(file);
+
+        // #then it is still what the words say
+        assert_eq!(cached(&cache, &request, "model-one", "es"), Some(stored));
+
+        // #when the cache is cleared
+        std::fs::write(cache.join("audio-1.bin"), b"not a translation").expect("a neighbour");
+        assert_eq!(clear(&cache).expect("a clear"), 1);
+
+        // #then only the translations went
+        assert_eq!(cached(&cache, &request, "model-one", "es"), None);
+        assert!(cache.join("audio-1.bin").exists(), "not ours to delete");
+        assert_eq!(clear(&cache).expect("a second clear"), 0);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

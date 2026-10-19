@@ -10673,6 +10673,16 @@ impl App {
                         .replace("{error}", &error.to_string()),
                 ),
             },
+            Action::ClearTranslations => {
+                match crate::lyrics_translation::clear(&self.dirs.lyrics_cache_dir()) {
+                    Ok(_) => self.toast(gettext(self.locale, "Translations cleared")),
+                    Err(error) => self.toast_error(
+                        // Translators: {error} is an error message.
+                        gettext(self.locale, "Couldn't clear translations: {error}")
+                            .replace("{error}", &error.to_string()),
+                    ),
+                }
+            }
             Action::ToggleWinampWindow => {
                 // One window at a time: this one closes and the loop in
                 // `main` opens the other kind where each was last.
@@ -20094,6 +20104,50 @@ mod tests {
         assert_eq!(app.media_art, None, "a path into a deleted cache");
 
         let _ = std::fs::remove_file(&file);
+    }
+
+    /// The Storage section's translation button empties the translation cache
+    /// and leaves the rest of the lyrics folder alone.
+    #[test]
+    fn clearing_translations_removes_only_what_the_provider_made() {
+        // #given a stored translation beside another cached file
+        let mut app = headless_app();
+        let ctx = egui::Context::default();
+        let cache = app.dirs.lyrics_cache_dir();
+        std::fs::create_dir_all(&cache).expect("the lyrics cache");
+        let request = crate::lyrics_translation::Request {
+            uri: "spotify:track:one".into(),
+            lines: vec!["Hello".into()],
+            language: "es".into(),
+            provider: crate::settings::TranslateProvider::OpenRouter,
+            model: None,
+        };
+        crate::lyrics_translation::store(
+            &cache,
+            &request,
+            "model-one",
+            "es",
+            &[Some("Hola".into())],
+        );
+        let neighbour = cache.join("audio-1.bin");
+        std::fs::write(&neighbour, b"keep me").expect("a neighbour");
+
+        // #when the button is used
+        app.actions.push(Action::ClearTranslations);
+        app.apply_actions(&ctx);
+
+        // #then the words are gone, the neighbour stays, and the app said so
+        assert_eq!(
+            crate::lyrics_translation::cached(&cache, &request, "model-one", "es"),
+            None
+        );
+        assert!(neighbour.exists());
+        assert_eq!(
+            app.toasts.last().map(|toast| toast.message.as_str()),
+            Some("Translations cleared")
+        );
+
+        let _ = std::fs::remove_file(&neighbour);
     }
 
     /// Changes the conditions as the power reader would.

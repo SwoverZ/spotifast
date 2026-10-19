@@ -26,7 +26,9 @@ feature lives here. Everything else tracks upstream; the branch is
     follows the computer's language; otherwise pick one of the ISO 639-1
     languages, listed by their own name.
 - Translations are cached per track, language, provider, and model in the
-  lyrics cache directory as `translation-<sha1>.json`, for 30 days.
+  lyrics cache directory as `translation-<sha1>.json`. They are kept between
+  sessions, so a song is only sent to the provider once, until you clear them
+  from **Settings → Storage → Lyric translations → Clear translations**.
 
 ## Privacy
 
@@ -57,8 +59,10 @@ feature lives here. Everything else tracks upstream; the branch is
     so old `settings.json` files keep working.
   - `src/backend.rs`: `TranslationModels`, `TranslateLyrics`, and
     `SetTranslationKey` commands with their events and tasks.
-  - `src/app.rs`, `src/model.rs`: state, events, and actions.
-  - `src/ui/settings.rs`: the settings section.
+  - `src/app.rs`, `src/model.rs`: state, events, and actions, including
+    `ClearTranslations` for the Storage section.
+  - `src/ui/settings.rs`: the settings section and the Storage row with its
+    **Clear translations** button.
   - `src/ui/lyrics.rs`: the globe buttons and the translated line rendering.
   - `src/paths.rs`: `translation_key_file()`.
   - `src/demo.rs`: `lyrics-translation`, `lyrics-translation-fullscreen`,

@@ -1248,6 +1248,8 @@ pub enum Action {
     ShowWindow,
     HideWindow,
     ClearArtCache,
+    /// Remove every cached lyric translation.
+    ClearTranslations,
     /// Clear local play history.
     ClearPlayHistory,
     /// Open or close the Winamp window.
