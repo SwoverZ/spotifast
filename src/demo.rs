@@ -705,6 +705,31 @@ fn sample_lyrics() -> crate::lyrics::Lyrics {
     }
 }
 
+/// A Spanish translation of the sample lyrics, line for line, for the
+/// `lyrics-translation` demo surfaces.
+#[cfg(any(test, feature = "demo"))]
+fn sample_translations() -> Vec<Option<String>> {
+    [
+        "Las farolas parpadean por la carretera del río",
+        "Cada ventana guarda la tarde de alguien",
+        "Bajo la radio para que puedas dormir",
+        "Cuento los hitos como un rosario",
+        "Dejamos la ciudad con medio depósito",
+        "Y un mapa que solo muestra el camino de vuelta",
+        "Pero la noche es ancha y la carretera larga",
+        "Y no hay ningún otro sitio donde quiera estar",
+        "El café se enfría en el portavasos",
+        "Tu mano dormida sobre la palanca",
+        "En algún punto pasado el límite del condado",
+        "Las estrellas salen para guiarnos",
+        "Aún la noche es ancha y la carretera larga",
+        "Y no hay ningún otro sitio donde quiera estar",
+    ]
+    .iter()
+    .map(|line| Some((*line).to_string()))
+    .collect()
+}
+
 /// Applies `--demo-page` and `--demo-show`.
 /// Makes the displayed song this computer's playback, with that song's own
 /// metadata, so the player bar draws the same as without it.
@@ -1171,18 +1196,28 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                     },
                 );
             }
-            "lyrics" | "lyrics-fullscreen" => {
+            "lyrics"
+            | "lyrics-fullscreen"
+            | "lyrics-translation"
+            | "lyrics-translation-fullscreen" => {
                 app.lyrics_uri = app.now_playing().map(|now| now.uri);
                 app.lyrics = Loadable::Loaded(Some(sample_lyrics()));
                 app.lyrics_following = true;
                 app.show_lyrics_panel = true;
-                if surface == "lyrics-fullscreen" {
+                if surface.starts_with("lyrics-translation") {
+                    app.settings.lyrics_translate = true;
+                    app.translation_key_present = true;
+                    app.lyrics_translation = Loadable::Loaded(sample_translations());
+                }
+                if surface.ends_with("fullscreen") {
                     app.actions.push(Action::SetLyricsFullscreen(true));
                 }
             }
             // Full-screen lyrics drawn in the window as it is, for shots at
             // a chosen size, which a real full screen would override.
-            "lyrics-fullscreen-view" | "lyrics-fullscreen-instrumental" => {
+            "lyrics-fullscreen-view"
+            | "lyrics-fullscreen-instrumental"
+            | "lyrics-fullscreen-translation-view" => {
                 app.lyrics_uri = app.now_playing().map(|now| now.uri);
                 let mut lyrics = sample_lyrics();
                 lyrics.instrumental = surface == "lyrics-fullscreen-instrumental";
@@ -1190,6 +1225,11 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.lyrics_following = true;
                 app.show_lyrics_panel = true;
                 app.lyrics_fullscreen = Some(false);
+                if surface == "lyrics-fullscreen-translation-view" {
+                    app.settings.lyrics_translate = true;
+                    app.translation_key_present = true;
+                    app.lyrics_translation = Loadable::Loaded(sample_translations());
+                }
             }
             // Emoji in titles, artists, playlist names and lyrics: joined
             // sequences, skin tones, flags and keycaps. Give it after
@@ -6456,6 +6496,68 @@ mod tests {
         }
     }
 
+    /// A translated line sits under its original, in smaller, quieter text,
+    /// in the side panel and in the full-screen view.
+    #[cfg(feature = "demo")]
+    #[test]
+    fn translated_lyrics_sit_under_their_line_in_smaller_text() {
+        let find = |shapes: &[egui::epaint::ClippedShape], wanted: &str| {
+            shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.job.text == wanted => {
+                    Some(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                }
+                _ => None,
+            })
+        };
+        for surface in ["lyrics-translation", "lyrics-fullscreen-translation-view"] {
+            let (ctx, mut app) = accessible_app(surface);
+            apply_flags(&mut app, None, Some(surface));
+            let mut shapes = Vec::new();
+            for frame in 0..30 {
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        time: Some(f64::from(frame) / 30.0),
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1600.0, 900.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| app.frame_ui(ui),
+                );
+                output.textures_delta.clear();
+                shapes = output.shapes;
+            }
+            let now = app.now_playing().expect("the demo plays a song");
+            let lyrics = app
+                .lyrics
+                .get()
+                .cloned()
+                .flatten()
+                .expect("the demo has lyrics");
+            let active = lyrics
+                .active_line(now.position_ms)
+                .expect("a line is being sung");
+            let original = lyrics.lines[active].text.clone();
+            let translation = sample_translations()[active].clone().unwrap();
+            let above = find(&shapes, &original).expect("the original line is drawn");
+            let below = find(&shapes, &translation).expect("its translation is drawn");
+            assert!(
+                below.top() >= above.bottom() - 2.0,
+                "the translation sits under the line: {above:?} {below:?}"
+            );
+            if surface.contains("fullscreen") {
+                // The full-screen view is wide enough that neither text wraps,
+                // so the heights compare the font sizes.
+                assert!(
+                    below.height() < above.height(),
+                    "the translation is smaller: {above:?} {below:?}"
+                );
+            }
+            app.backend.shutdown();
+        }
+    }
+
     /// The cover moves aside only once there are words: while lyrics load,
     /// and when fetching them failed, it stays in the middle, the failure
     /// with its retry beneath.
@@ -6647,6 +6749,20 @@ mod tests {
         frame(&ctx, &mut app);
         app.lyrics_fullscreen = Some(false);
         frame(&ctx, &mut app);
+        app.lyrics_fullscreen = None;
+        app.show_lyrics_panel = false;
+        app.settings.lyrics_translate = true;
+        app.translation_key_present = true;
+        app.lyrics_translation = Loadable::Loaded(sample_translations());
+        app.show_lyrics_panel = true;
+        frame(&ctx, &mut app);
+        app.lyrics_translation = Loadable::Loading;
+        frame(&ctx, &mut app);
+        app.lyrics_fullscreen = Some(false);
+        frame(&ctx, &mut app);
+        app.settings.lyrics_translate = false;
+        app.lyrics_translation = Loadable::NotLoaded;
+        app.translation_key_present = false;
         app.lyrics_fullscreen = None;
         app.show_lyrics_panel = false;
         for dialog in [
