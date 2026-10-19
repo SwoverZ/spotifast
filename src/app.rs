@@ -511,8 +511,8 @@ pub struct App {
     pub lyrics_translation: Loadable<Vec<Option<String>>>,
     /// The track `lyrics_translation` is for.
     pub lyrics_translation_uri: Option<String>,
-    /// The next track's words, fetched while the current one plays.
-    prefetched_lyrics: Option<(String, Option<crate::lyrics::Lyrics>)>,
+    /// The next tracks' words, fetched while the current one plays.
+    prefetched_lyrics: Vec<(String, Option<crate::lyrics::Lyrics>)>,
     /// The track whose words are being fetched ahead of its turn.
     prefetching_lyrics: Option<String>,
     /// Whether the lyrics translator's API key is saved.
@@ -1031,7 +1031,7 @@ impl App {
             lyrics_line_shown: None,
             lyrics_translation: Loadable::NotLoaded,
             lyrics_translation_uri: None,
-            prefetched_lyrics: None,
+            prefetched_lyrics: Vec::new(),
             prefetching_lyrics: None,
             translation_key_present,
             translation_models: Loadable::NotLoaded,
@@ -2149,17 +2149,9 @@ impl App {
                             Err(error) => Loadable::Failed(error),
                         };
                         self.request_translation();
-                    } else if self.prefetching_lyrics.as_deref() == Some(uri.as_str()) {
+                    } else {
                         // The words are for a song that has not started.
-                        self.prefetching_lyrics = None;
-                        if let Ok(found) = result {
-                            if let Some(lyrics) =
-                                found.as_ref().filter(|lyrics| !lyrics.lines.is_empty())
-                            {
-                                self.prefetch_translation(&uri, lyrics);
-                            }
-                            self.prefetched_lyrics = Some((uri, found));
-                        }
+                        self.keep_prefetched_lyrics(uri, result);
                     }
                 }
                 Event::LyricsTranslation { uri, result } => {
@@ -3184,6 +3176,9 @@ impl App {
         {
             self.refresh_queue(true);
         }
+        // The next song's words are prepared even when no lyrics view is
+        // open, so opening one as a song starts still finds them ready.
+        self.prefetch_next_lyrics();
         if self.show_lyrics_panel {
             self.request_lyrics();
         }
@@ -3237,43 +3232,81 @@ impl App {
         })));
     }
 
-    /// Whether a lyrics view is on screen, so fetching ahead is wanted.
+    /// Whether a lyrics view is on screen, so the queue stays fresh.
     fn lyrics_open(&self) -> bool {
         self.show_lyrics_panel || self.lyrics_fullscreen.is_some()
     }
 
+    /// Whether `uri` is one of the songs still to come.
+    fn is_upcoming(&self, uri: &str) -> bool {
+        self.queue
+            .get()
+            .is_some_and(|queue| queue.queue.iter().any(|item| item.uri() == uri))
+    }
+
     /// Takes the words fetched ahead of time when they are for `uri`.
     fn take_prefetched_lyrics(&mut self, uri: &str) -> Option<Option<crate::lyrics::Lyrics>> {
-        let is_for = self
+        let index = self
             .prefetched_lyrics
-            .as_ref()
-            .is_some_and(|(cached, _)| cached == uri);
-        if is_for {
-            self.prefetched_lyrics.take().map(|(_, found)| found)
-        } else {
-            None
+            .iter()
+            .position(|(cached, _)| cached == uri)?;
+        Some(self.prefetched_lyrics.remove(index).1)
+    }
+
+    /// Keeps words that arrived for a song that has not started, and asks for
+    /// their translation ahead of time. An answer is kept even when the song
+    /// is no longer the one being fetched: the queue can move while a lookup
+    /// runs, and the words are still worth having when their turn comes.
+    fn keep_prefetched_lyrics(
+        &mut self,
+        uri: String,
+        result: Result<Option<crate::lyrics::Lyrics>, String>,
+    ) {
+        let fetching = self.prefetching_lyrics.as_deref() == Some(uri.as_str());
+        if fetching {
+            self.prefetching_lyrics = None;
+        }
+        if !fetching && !self.is_upcoming(&uri) {
+            return;
+        }
+        if let Ok(found) = result {
+            if let Some(lyrics) = found.as_ref().filter(|lyrics| !lyrics.lines.is_empty()) {
+                self.prefetch_translation(&uri, lyrics);
+            }
+            self.prefetched_lyrics.retain(|(cached, _)| cached != &uri);
+            self.prefetched_lyrics.push((uri, found));
+            // The queue can move on; only the nearest songs are worth
+            // keeping.
+            const KEPT: usize = 3;
+            if self.prefetched_lyrics.len() > KEPT {
+                self.prefetched_lyrics.remove(0);
+            }
         }
     }
 
     /// Fetches the words of the song after the playing one, so the panel has
     /// them the moment it starts. Only tracks; the queue's podcasts are
-    /// skipped, and only while a lyrics view is open.
+    /// skipped.
     fn prefetch_next_lyrics(&mut self) {
-        if self.offline || !self.lyrics_open() {
+        if self.offline {
             return;
         }
         let Some(now) = self.now_playing() else {
             return;
         };
-        let Some(next) = self
-            .queue
-            .get()
-            .and_then(|queue| queue.queue.first())
-            .and_then(|item| match item {
-                PlayableItem::Track(track) => Some(track.clone()),
-                PlayableItem::Episode(_) => None,
-            })
-        else {
+        let Some(queue) = self.queue.get() else {
+            // Nothing names what comes next yet. Ask once, so a song played
+            // from a context prepares the one after it without needing a
+            // queue or lyrics view on screen.
+            if !self.queue.is_loading() {
+                self.refresh_queue(true);
+            }
+            return;
+        };
+        let Some(next) = queue.queue.first().and_then(|item| match item {
+            PlayableItem::Track(track) => Some(track.clone()),
+            PlayableItem::Episode(_) => None,
+        }) else {
             return;
         };
         if next.uri.is_empty()
@@ -3281,8 +3314,8 @@ impl App {
             || self.prefetching_lyrics.as_deref() == Some(next.uri.as_str())
             || self
                 .prefetched_lyrics
-                .as_ref()
-                .is_some_and(|(cached, _)| cached == &next.uri)
+                .iter()
+                .any(|(cached, _)| cached == &next.uri)
         {
             return;
         }
@@ -20331,7 +20364,7 @@ mod tests {
         // #then they wait, unshown, for their song
         assert!(app.prefetching_lyrics.is_none());
         assert_eq!(
-            app.prefetched_lyrics.as_ref().map(|(uri, _)| uri.as_str()),
+            app.prefetched_lyrics.first().map(|(uri, _)| uri.as_str()),
             Some(next.as_str())
         );
         assert_ne!(app.lyrics, Loadable::Loaded(Some(lyrics.clone())));
@@ -20345,12 +20378,11 @@ mod tests {
 
         // #then the panel has its words without asking again
         assert_eq!(app.lyrics, Loadable::Loaded(Some(lyrics)));
-        assert!(app.prefetched_lyrics.is_none());
+        assert!(app.prefetched_lyrics.is_empty());
     }
 
-    /// Nothing is fetched ahead when there is nowhere to look or nothing to
-    /// fetch: a closed lyrics view, an unfetched queue, an offline app, or a
-    /// head that is the playing song.
+    /// Nothing is fetched ahead when there is nothing to fetch: an unfetched
+    /// queue, an offline app, or a head that is the playing song.
     #[test]
     fn nothing_is_prefetched_without_a_next_song() {
         // #given a playing song and an open lyrics view
@@ -20359,19 +20391,12 @@ mod tests {
         app.offline = false;
         app.show_lyrics_panel = true;
 
-        // #when the view is closed
-        app.show_lyrics_panel = false;
-        app.request_lyrics();
-        // #then nothing is fetched ahead
-        assert!(app.prefetching_lyrics.is_none());
-
-        // #when the view opens but the queue's head is the playing song
+        // #when the queue's head is the playing song
         let current = app.now_playing_item().expect("the playing song");
         app.queue = Loadable::Loaded(Queue {
             currently_playing: Some(current.clone()),
             queue: vec![current],
         });
-        app.show_lyrics_panel = true;
         app.request_lyrics();
         assert!(app.prefetching_lyrics.is_none(), "the head is playing");
 
@@ -20395,6 +20420,84 @@ mod tests {
         app.offline = true;
         app.request_lyrics();
         assert!(app.prefetching_lyrics.is_none(), "offline");
+    }
+
+    /// The next song is prepared even with no lyrics view open, so opening
+    /// one as a song starts still finds the words ready.
+    #[test]
+    fn the_next_song_is_prepared_with_no_lyrics_view_open() {
+        // #given a playing song and a queue, with every lyrics view closed
+        let mut app = headless_app();
+        crate::demo::populate(&mut app);
+        app.offline = false;
+        app.show_lyrics_panel = false;
+        app.lyrics_fullscreen = None;
+        let next = app
+            .queue
+            .get()
+            .expect("the demo queue")
+            .queue
+            .first()
+            .expect("a next song")
+            .uri()
+            .to_string();
+
+        // #when the words are prepared for the next song
+        app.prefetch_next_lyrics();
+
+        // #then they are on their way anyway
+        assert_eq!(app.prefetching_lyrics.as_deref(), Some(next.as_str()));
+    }
+
+    /// An answer for a song still to come is kept even when the in-flight
+    /// marker has moved on: the queue can change while a lookup runs, and
+    /// the words are what makes the next song start translated.
+    #[test]
+    fn a_prefetched_answer_survives_a_lost_marker() {
+        // #given a queued next song and a lookup that was started for it
+        let mut app = headless_app();
+        crate::demo::populate(&mut app);
+        app.offline = false;
+        app.settings.lyrics_translate = true;
+        app.translation_key_present = true;
+        let next = app
+            .queue
+            .get()
+            .expect("the demo queue")
+            .queue
+            .first()
+            .expect("a next song")
+            .uri()
+            .to_string();
+        // The marker now points at some other song.
+        app.prefetching_lyrics = Some("spotify:track:elsewhere".into());
+
+        // #when its words arrive
+        let lyrics = crate::lyrics::Lyrics {
+            lines: vec![crate::lyrics::Line {
+                at_ms: Some(0),
+                text: "Hello".into(),
+            }],
+            synced: true,
+            instrumental: false,
+        };
+        app.handle_backend_events(vec![Event::Lyrics {
+            uri: next.clone(),
+            result: Ok(Some(lyrics.clone())),
+        }]);
+
+        // #then they are kept for when their song starts
+        assert_eq!(
+            app.prefetched_lyrics.first().map(|(uri, _)| uri.as_str()),
+            Some(next.as_str()),
+            "an upcoming song's words are kept even when the marker moved"
+        );
+
+        // #and their translation was asked for ahead of time
+        let requests = app.backend.take_translation_requests();
+        assert_eq!(requests.len(), 1, "one prefetch was asked for");
+        assert_eq!(requests[0].uri, next);
+        assert!(requests[0].prefetch);
     }
 
     /// Changes the conditions as the power reader would.

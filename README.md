@@ -109,8 +109,9 @@ This fork adds a lyrics translator: a globe button in the lyrics views shows
 a translation under each original line, using a free model from OpenRouter or
 Google AI Studio with your own API key. The key stays on this computer, in a
 file only you can read, and only the lyric lines travel to the provider you
-pick. Translations are kept between sessions and the next song's words are
-fetched while the current one plays; clear the stored translations from
+pick. Translations are kept between sessions and the next song's words and
+translation are already fetched while the current one plays; clear the stored
+translations from
 **Settings → Storage**. Settings has a **Lyrics translator** section for the
 provider, key, model, and language. Fork setup, privacy notes, and the rebase
 recipe live in [FORK-NOTES.md](FORK-NOTES.md).

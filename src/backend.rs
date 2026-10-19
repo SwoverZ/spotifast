@@ -1046,6 +1046,8 @@ pub struct Backend {
     #[cfg(test)]
     home_cache_stores:
         std::sync::Mutex<Vec<crate::account_cache::Cache<crate::model::HomeSnapshot>>>,
+    #[cfg(test)]
+    translation_requests: std::sync::Mutex<Vec<crate::lyrics_translation::Request>>,
 }
 
 impl Backend {
@@ -1140,6 +1142,8 @@ impl Backend {
             library_cache_stores: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
             home_cache_stores: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
+            translation_requests: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -1169,6 +1173,13 @@ impl Backend {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(cache.clone());
+        }
+        #[cfg(test)]
+        if let Command::TranslateLyrics(request) = &command {
+            self.translation_requests
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push((**request).clone());
         }
         if self.offline
             && !matches!(
@@ -1384,6 +1395,11 @@ impl Backend {
     #[cfg(test)]
     pub(crate) fn take_queued_tracks(&self) -> Vec<String> {
         std::mem::take(&mut *self.queued_tracks.lock().unwrap())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_translation_requests(&self) -> Vec<crate::lyrics_translation::Request> {
+        std::mem::take(&mut *self.translation_requests.lock().unwrap())
     }
 
     #[cfg(test)]
@@ -4095,10 +4111,38 @@ impl Worker {
         let cache_dir = self.dirs.lyrics_cache_dir();
         let key_path = self.dirs.translation_key_file();
         tokio::spawn(async move {
-            let result = Worker::translation_job(http, key_path, cache_dir, &request).await;
+            let mut result = Worker::translation_job(
+                http.clone(),
+                key_path.clone(),
+                cache_dir.clone(),
+                &request,
+            )
+            .await;
+            // Nobody is watching a prefetch: a provider hiccup must not turn
+            // into a spinner when the song starts, so it is retried quietly.
+            // The panel's own request is left alone: its error is shown.
+            let mut tries = 0;
+            while request.prefetch && result.is_err() && tries < 2 {
+                tries += 1;
+                tokio::time::sleep(Duration::from_secs(2 * tries)).await;
+                result = Worker::translation_job(
+                    http.clone(),
+                    key_path.clone(),
+                    cache_dir.clone(),
+                    &request,
+                )
+                .await;
+            }
             // A prefetch only warms the cache: the panel has not asked for
             // these words and must not show them for the playing song.
-            if !request.prefetch {
+            if request.prefetch {
+                if let Err(error) = &result {
+                    log::warn!(
+                        "could not prepare the translation for {}: {error}",
+                        request.uri,
+                    );
+                }
+            } else {
                 let _ = events.send(Event::LyricsTranslation {
                     uri: request.uri,
                     result,
