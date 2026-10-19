@@ -5,8 +5,8 @@ use egui::{Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
 use crate::api::models::pick_image;
 use crate::app::App;
 use crate::i18n::{gettext, ngettext, pgettext};
-use crate::model::{Action, Dialog};
-use crate::settings::{LanguageChoice, ProxyMode, ThemeChoice};
+use crate::model::{Action, Dialog, Loadable};
+use crate::settings::{LanguageChoice, ProxyMode, ThemeChoice, TranslateProvider};
 use crate::theme::{self, Icon, Palette};
 
 use super::widgets;
@@ -1296,6 +1296,259 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     },
                 );
             }
+        });
+    }
+
+    let translator = gettext(locale, "Lyrics translator");
+    let translate_lyrics = gettext(locale, "Translate lyrics");
+    let translator_provider = gettext(locale, "Provider");
+    let translator_key = gettext(locale, "API key");
+    let translator_model = gettext(locale, "Model");
+    let translator_language = gettext(locale, "Language");
+    let translator_rows = [
+        RowText::new(
+            translate_lyrics.clone(),
+            gettext(
+                locale,
+                "Show a translation under each line. The lyrics are sent to the provider you choose.",
+            ),
+        ),
+        RowText::new(
+            translator_provider.clone(),
+            gettext(locale, "The service that translates the lyrics."),
+        ),
+        RowText::new(
+            translator_key.clone(),
+            gettext(
+                locale,
+                "Stored on this computer only, never in settings.json or logs.",
+            ),
+        ),
+        RowText::new(
+            translator_model.clone(),
+            gettext(locale, "A free model the provider lists for your key."),
+        ),
+        RowText::new(
+            translator_language.clone(),
+            gettext(locale, "System follows your computer's language."),
+        ),
+    ];
+    if section_matches(&needle, &translator, &translator_rows) {
+        any_visible = true;
+        ui.push_id("translation-settings", |ui| {
+            section(ui, &palette, &translator, |ui| {
+                filtered_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &translator,
+                    &translator_rows[0],
+                    |ui| {
+                        let mut enabled = app.settings.lyrics_translate;
+                        if widgets::switch(ui, &palette, &translate_lyrics, &mut enabled).changed()
+                        {
+                            app.settings.lyrics_translate = enabled;
+                            changed = true;
+                            app.actions.push(Action::LyricsTranslationChanged);
+                            if enabled {
+                                app.actions.push(Action::RefreshTranslationModels);
+                            }
+                        }
+                    },
+                );
+                filtered_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &translator,
+                    &translator_rows[1],
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for choice in TranslateProvider::ALL {
+                                if theme::soft_button(
+                                    ui,
+                                    &palette,
+                                    None,
+                                    choice.label(),
+                                    app.settings.lyrics_translate_provider == choice,
+                                )
+                                .clicked()
+                                    && app.settings.lyrics_translate_provider != choice
+                                {
+                                    app.settings.lyrics_translate_provider = choice;
+                                    // The other provider's model ids mean
+                                    // nothing here; the list picks a new one.
+                                    app.settings.lyrics_translate_model = None;
+                                    changed = true;
+                                    app.actions.push(Action::RefreshTranslationModels);
+                                    app.actions.push(Action::LyricsTranslationChanged);
+                                }
+                            }
+                        });
+                    },
+                );
+                // The key is typed in a full-width field under its row, and
+                // only lives here until it is saved to the owner-only file.
+                if translator_rows[2].matches(&needle, &translator) {
+                    let key_id = egui::Id::new("translation-api-key");
+                    let mut key = ui
+                        .data(|data| data.get_temp::<String>(key_id))
+                        .unwrap_or_default();
+                    ui.add_space(6.0);
+                    widgets::labeled_field(
+                        ui,
+                        &palette,
+                        locale,
+                        &translator_key,
+                        &mut key,
+                        "sk-or-v1-… or AIza…",
+                        true,
+                    );
+                    ui.data_mut(|data| data.insert_temp(key_id, key.clone()));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        let save = gettext(locale, "Save key");
+                        if !key.trim().is_empty()
+                            && theme::pill_button(ui, &palette, &save, true).clicked()
+                        {
+                            app.actions
+                                .push(Action::SetTranslationKey(key.trim().to_string()));
+                            key.clear();
+                            ui.data_mut(|data| data.insert_temp(key_id, key.clone()));
+                        }
+                        if app.translation_key_present {
+                            let remove = gettext(locale, "Remove key");
+                            if theme::pill_button(ui, &palette, &remove, false).clicked() {
+                                app.actions.push(Action::ClearTranslationKey);
+                            }
+                            theme::text(
+                                ui,
+                                gettext(locale, "Key saved"),
+                                theme::regular(13.0),
+                                palette.secondary,
+                            );
+                        }
+                    });
+                    ui.add_space(10.0);
+                }
+                if translator_rows[3].matches(&needle, &translator) {
+                    let models = app.translation_models.get().cloned();
+                    let loading = app.translation_models.is_loading();
+                    let failure = match &app.translation_models {
+                        Loadable::Failed(error) => Some(error.clone()),
+                        _ => None,
+                    };
+                    let chosen = app
+                        .settings
+                        .lyrics_translate_model
+                        .clone()
+                        .filter(|model| !model.trim().is_empty());
+                    let selected = chosen
+                        .as_deref()
+                        .and_then(|id| {
+                            models.as_ref().and_then(|models| {
+                                models
+                                    .iter()
+                                    .find(|model| model.id == id)
+                                    .map(|model| model.name.clone())
+                            })
+                        })
+                        .or_else(|| chosen.clone())
+                        .unwrap_or_else(|| gettext(locale, "First free model").to_string());
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        egui::ComboBox::from_id_salt("translation_model")
+                            .selected_text(selected)
+                            .width(240.0_f32.min(ui.available_width()))
+                            .height(1000.0)
+                            .show_ui(ui, |ui| {
+                                if let Some(models) = &models {
+                                    for model in models {
+                                        let picked = chosen.as_deref() == Some(model.id.as_str());
+                                        if ui.selectable_label(picked, &model.name).clicked()
+                                            && !picked
+                                        {
+                                            app.settings.lyrics_translate_model =
+                                                Some(model.id.clone());
+                                            changed = true;
+                                            app.actions.push(Action::LyricsTranslationChanged);
+                                        }
+                                    }
+                                }
+                            });
+                        let refresh = gettext(locale, "Refresh models");
+                        if theme::soft_button(ui, &palette, None, &refresh, false).clicked() {
+                            app.actions.push(Action::RefreshTranslationModels);
+                        }
+                    });
+                    if loading {
+                        theme::text(
+                            ui,
+                            gettext(locale, "Loading models…"),
+                            theme::regular(12.5),
+                            palette.secondary,
+                        );
+                    } else if let Some(error) = &failure {
+                        theme::text(ui, error, theme::regular(12.5), palette.danger);
+                    }
+                    ui.add_space(10.0);
+                }
+                filtered_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &translator,
+                    &translator_rows[4],
+                    |ui| {
+                        let system =
+                            pgettext(locale, "language", "System language").into_owned();
+                        let current = app.settings.lyrics_translate_language.clone();
+                        let selected = if current.is_empty() {
+                            system.clone()
+                        } else {
+                            crate::lyrics_translation::language_name(&current)
+                                .map(str::to_string)
+                                .unwrap_or_else(|| current.clone())
+                        };
+                        egui::ComboBox::from_id_salt("translation_language")
+                            .selected_text(selected)
+                            .width(240.0_f32.min(ui.available_width()))
+                            .height(1000.0)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(current.is_empty(), system.as_str())
+                                    .clicked()
+                                    && !current.is_empty()
+                                {
+                                    app.settings.lyrics_translate_language.clear();
+                                    changed = true;
+                                    app.actions.push(Action::LyricsTranslationChanged);
+                                }
+                                for (code, name) in crate::lyrics_translation::LANGUAGES {
+                                    let picked = current == *code;
+                                    if ui.selectable_label(picked, *name).clicked() && !picked {
+                                        app.settings.lyrics_translate_language =
+                                            (*code).to_string();
+                                        changed = true;
+                                        app.actions.push(Action::LyricsTranslationChanged);
+                                    }
+                                }
+                            });
+                    },
+                );
+                theme::text(
+                    ui,
+                    gettext(
+                        locale,
+                        "Lyrics are sent to the chosen provider to be translated. The API key never leaves this computer.",
+                    ),
+                    theme::regular(12.5),
+                    palette.dim,
+                );
+            });
         });
     }
 

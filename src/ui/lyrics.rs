@@ -93,6 +93,23 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.actions.push(Action::SetLyricsFullscreen(true));
                 }
+                let translating = app.settings.lyrics_translate;
+                if theme::icon_button(
+                    ui,
+                    Icon::Globe,
+                    18.0,
+                    if translating {
+                        palette.accent
+                    } else {
+                        palette.secondary
+                    },
+                    palette.text,
+                    &gettext(app.locale, "Translate lyrics"),
+                )
+                .clicked()
+                {
+                    app.actions.push(Action::ToggleLyricsTranslation);
+                }
                 let loaded = matches!(&app.lyrics, Loadable::Loaded(Some(_)));
                 if loaded
                     && !app.lyrics_following
@@ -209,6 +226,16 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
     // line is quiet, regular text, the same before and after it has been
     // sung. A line takes 220 ms to light up or fade, as in omarchy-lyrics.
     let quiet = palette.text.gamma_multiply(0.45);
+    let translations = app.lyrics_translation.get().cloned().unwrap_or_default();
+    if app.settings.lyrics_translate && matches!(app.lyrics_translation, Loadable::Loading) {
+        theme::text(
+            ui,
+            gettext(app.locale, "Translating lyrics…"),
+            theme::regular(12.0),
+            palette.secondary,
+        );
+        ui.add_space(6.0);
+    }
     let scroll = crate::autoscroll::show(
         ui,
         egui::ScrollArea::vertical()
@@ -268,6 +295,34 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
                     )
                 };
                 crate::autoscroll::row(ui, &response);
+                if let Some(translation) = translations
+                    .get(index)
+                    .and_then(Option::as_deref)
+                    .filter(|translation| !translation.trim().is_empty())
+                {
+                    let font = theme::regular(LINE_SIZE * 0.8);
+                    let color = palette.text.gamma_multiply(0.5);
+                    if crate::bidi::is_rtl(translation) {
+                        let galley = crate::bidi::layout(
+                            ui.painter(),
+                            translation,
+                            font,
+                            color,
+                            ui.available_width(),
+                            usize::MAX,
+                            None,
+                        );
+                        ui.add(egui::Label::new(galley).sense(Sense::hover()));
+                    } else {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(translation).font(font).color(color),
+                            )
+                            .sense(Sense::hover()),
+                        );
+                    }
+                    ui.add_space(2.0);
+                }
                 let rect = response.rect;
                 if lyrics.synced
                     && response.clicked()
@@ -563,6 +618,23 @@ fn fullscreen_header(app: &mut App, ui: &mut egui::Ui) {
             {
                 app.actions.push(Action::SetLyricsFullscreen(false));
             }
+            let translating = app.settings.lyrics_translate;
+            if theme::icon_button(
+                ui,
+                Icon::Globe,
+                18.0,
+                if translating {
+                    palette.accent
+                } else {
+                    palette.secondary
+                },
+                palette.text,
+                &gettext(app.locale, "Translate lyrics"),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ToggleLyricsTranslation);
+            }
             let loaded = matches!(&app.lyrics, Loadable::Loaded(Some(_)));
             if loaded
                 && !app.lyrics_following
@@ -696,6 +768,16 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
     // so highlighting cannot rewrap the words during a transition.
     // A line takes 300 ms to light up or fade.
     let quiet = palette.text.gamma_multiply(0.68);
+    let translations = app.lyrics_translation.get().cloned().unwrap_or_default();
+    if app.settings.lyrics_translate && matches!(app.lyrics_translation, Loadable::Loading) {
+        theme::text(
+            ui,
+            gettext(app.locale, "Translating lyrics…"),
+            theme::regular(12.0),
+            palette.text.gamma_multiply(0.65),
+        );
+        ui.add_space(4.0);
+    }
     ui.spacing_mut().scroll.fade.strength = 0.0;
     egui::ScrollArea::vertical()
         .id_salt(("fullscreen-lyrics-scroll", &now.uri))
@@ -762,7 +844,36 @@ fn fullscreen_contents(app: &mut App, ui: &mut egui::Ui) {
                 let response = ui
                     .scope(|ui| {
                         ui.multiply_opacity(edge * edge * (3.0 - 2.0 * edge));
-                        ui.add(egui::Label::new(galley).sense(sense))
+                        let response = ui.add(egui::Label::new(galley).sense(sense));
+                        if let Some(translation) = translations
+                            .get(index)
+                            .and_then(Option::as_deref)
+                            .filter(|translation| !translation.trim().is_empty())
+                        {
+                            ui.add_space(3.0);
+                            let font = theme::regular(size * 0.58);
+                            let color = palette.text.gamma_multiply(0.62);
+                            if crate::bidi::is_rtl(translation) {
+                                let galley = crate::bidi::layout(
+                                    ui.painter(),
+                                    translation,
+                                    font,
+                                    color,
+                                    ui.available_width(),
+                                    usize::MAX,
+                                    None,
+                                );
+                                ui.add(egui::Label::new(galley).sense(Sense::hover()));
+                            } else {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(translation).font(font).color(color),
+                                    )
+                                    .sense(Sense::hover()),
+                                );
+                            }
+                        }
+                        response
                     })
                     .inner;
                 let rect = response.rect;
