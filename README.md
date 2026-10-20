@@ -112,9 +112,11 @@ file only you can read, and only the lyric lines travel to the provider you
 pick. Translations are kept between sessions and the next song's words and
 translation are already fetched while the current one plays; songs already in
 the chosen language are left as they are. Clear the stored translations from
-**Settings → Storage**. Settings has a **Lyrics translator** section for the
-provider, key, model, and language. Fork setup, privacy notes, and the rebase
-recipe live in [FORK-NOTES.md](FORK-NOTES.md).
+**Settings → Storage**. Install and update the patched build with
+`./plugin/install.sh` (see [plugin/README.md](plugin/README.md)). Settings has
+a **Lyrics translator** section for the provider, key, model, and language.
+Fork setup, privacy notes, and the update playbook live in
+[FORK-NOTES.md](FORK-NOTES.md) and [plugin/AGENTS.md](plugin/AGENTS.md).
 
 ## Guides and help
 

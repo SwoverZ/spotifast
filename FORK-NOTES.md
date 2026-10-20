@@ -9,6 +9,26 @@ Upstream declined translated lyrics (crmne/spotifast#930 and #534), so the
 feature lives here. Everything else tracks upstream; the branch is
 `lyrics-translation`.
 
+## Installing and updating
+
+Spotifast has no runtime plugin API, so the feature is a small commit series
+on top of an upstream release, built into a binary by one script. It installs
+where the desktop launcher expects it and keeps the previous build for
+rollback.
+
+```sh
+./plugin/install.sh            # build and install the current branch
+./plugin/install.sh --update   # rebase on the newest release, check, install
+./plugin/install.sh --status   # installed and available versions
+./plugin/install.sh --repair   # recover from a failed install or update
+./plugin/install.sh --rollback # restore the previous binary
+```
+
+[`plugin/README.md`](plugin/README.md) covers requirements, paths, and
+troubleshooting. [`plugin/AGENTS.md`](plugin/AGENTS.md) is the full playbook
+for coding models and maintainers: conflict map, verification, and the repair
+matrix for a release update.
+
 ## What it does
 
 - A globe button in the lyrics header, in the side panel and in the full
@@ -82,6 +102,8 @@ feature lives here. Everything else tracks upstream; the branch is
     regression test.
   - `assets/i18n/`: the new strings in all 15 catalogs.
   - `README.md`: a pointer to this file.
+  - `plugin/`: the installer and updater, the human guide, and the model
+    playbook for updates and repairs.
 
 ## Testing
 
@@ -104,11 +126,15 @@ unmodified v0.13.3.
 
 ## Keeping it fresh with upstream
 
-The diff against upstream is concentrated in `src/lyrics_translation.rs` and
-`src/ui/settings.rs`, so a rebase onto a newer release is usually clean:
+The one-command path is `./plugin/install.sh --update`, described in
+[`plugin/README.md`](plugin/README.md). When a rebase conflicts, the command
+installs nothing and restores the branch; follow
+[`plugin/AGENTS.md`](plugin/AGENTS.md) for the conflict map and the manual
+steps.
+
+The raw command, for reference:
 
 ```sh
-git remote add upstream https://github.com/crmne/spotifast.git
 git fetch upstream --tags
 git rebase --onto v0.14.0 v0.13.3 lyrics-translation
 ```
