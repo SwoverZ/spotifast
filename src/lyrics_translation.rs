@@ -22,6 +22,9 @@ const GOOGLE_API: &str = "https://generativelanguage.googleapis.com/v1beta";
 /// Free models count tokens per minute, so a long song is translated in
 /// batches rather than one request per line or one giant request.
 const MAX_LINES_PER_REQUEST: usize = 60;
+/// The first lines name a song's language; asking about all of them would
+/// spend as much as the translation the check may save.
+const DETECTION_LINES: usize = 16;
 /// Cached translations live in the lyrics cache under this prefix, so
 /// clearing them leaves the rest of the folder alone.
 const CACHE_PREFIX: &str = "translation-";
@@ -156,7 +159,9 @@ pub async fn free_models(
     }
 }
 
-/// Translates `lines` into `language`, one batch at a time.
+/// Translates `lines` into `language`, one batch at a time. Words already in
+/// the target language are left alone: no translated line is shown under
+/// them.
 pub async fn translate_lines(
     http: &reqwest::Client,
     provider: TranslateProvider,
@@ -165,14 +170,38 @@ pub async fn translate_lines(
     language: &str,
     lines: &[String],
 ) -> Result<Vec<Option<String>>, String> {
+    let api = match provider {
+        TranslateProvider::OpenRouter => OPENROUTER_API,
+        TranslateProvider::GoogleStudio => GOOGLE_API,
+    };
+    translate_lines_at(http, provider, key, model, language, lines, api).await
+}
+
+/// `translate_lines` against one provider's base URL, so the tests can point
+/// it at a local server.
+async fn translate_lines_at(
+    http: &reqwest::Client,
+    provider: TranslateProvider,
+    key: &str,
+    model: &str,
+    language: &str,
+    lines: &[String],
+    api: &str,
+) -> Result<Vec<Option<String>>, String> {
+    let sample = &lines[..lines.len().min(DETECTION_LINES)];
+    if !sample.is_empty()
+        && already_in_language(http, provider, key, model, language, sample, api).await
+    {
+        return Ok(vec![None; lines.len()]);
+    }
     let mut translated = vec![None; lines.len()];
     for (batch, chunk) in lines.chunks(MAX_LINES_PER_REQUEST).enumerate() {
         let answers = match provider {
             TranslateProvider::OpenRouter => {
-                openrouter_translate(http, key, model, language, chunk, OPENROUTER_API).await?
+                openrouter_translate(http, key, model, language, chunk, api).await?
             }
             TranslateProvider::GoogleStudio => {
-                google_translate(http, key, model, language, chunk, GOOGLE_API).await?
+                google_translate(http, key, model, language, chunk, api).await?
             }
         };
         let offset = batch * MAX_LINES_PER_REQUEST;
@@ -318,6 +347,41 @@ async fn openrouter_translate(
     parse_translations(content, lines.len())
 }
 
+/// Whether the model says `lines` are already in `language`, or `None` when
+/// it answered something that is neither yes nor no.
+async fn openrouter_already_in_language(
+    http: &reqwest::Client,
+    key: &str,
+    model: &str,
+    language: &str,
+    lines: &[String],
+    api: &str,
+) -> Result<Option<bool>, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "temperature": 0,
+        "messages": [
+            { "role": "system", "content": detection_prompt(language) },
+            { "role": "user", "content": numbered_lines(lines) },
+        ],
+    });
+    let answer = with_retry("OpenRouter", || {
+        http.post(format!("{api}/chat/completions"))
+            .bearer_auth(key)
+            .header("Accept", "application/json")
+            .json(&body)
+    })
+    .await?;
+    let answer: ChatResponse = serde_json::from_value(answer)
+        .map_err(|_| "OpenRouter sent an unexpected answer".to_string())?;
+    let content = answer
+        .choices
+        .first()
+        .map(|choice| choice.message.content.as_deref().unwrap_or_default())
+        .ok_or("OpenRouter returned no language")?;
+    Ok(language_answer(content))
+}
+
 // ---- Google AI Studio -------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -445,6 +509,50 @@ async fn google_translate(
     parse_translations(&content, lines.len())
 }
 
+/// Whether the model says `lines` are already in `language`, or `None` when
+/// it answered something that is neither yes nor no.
+async fn google_already_in_language(
+    http: &reqwest::Client,
+    key: &str,
+    model: &str,
+    language: &str,
+    lines: &[String],
+    api: &str,
+) -> Result<Option<bool>, String> {
+    let prompt = format!(
+        "{}\n\n{}",
+        detection_prompt(language),
+        numbered_lines(lines)
+    );
+    let body = serde_json::json!({
+        "contents": [{ "role": "user", "parts": [{ "text": prompt }] }],
+        "generationConfig": { "temperature": 0 },
+    });
+    let answer = with_retry("Google AI Studio", || {
+        http.post(format!("{api}/models/{model}:generateContent"))
+            // The key travels in the header, never the URL: URLs are logged.
+            .header("x-goog-api-key", key)
+            .header("Accept", "application/json")
+            .json(&body)
+    })
+    .await?;
+    let answer: GoogleResponse = serde_json::from_value(answer)
+        .map_err(|_| "Google AI Studio sent an unexpected answer".to_string())?;
+    let content = answer
+        .candidates
+        .first()
+        .map(|candidate| {
+            candidate
+                .content
+                .parts
+                .iter()
+                .filter_map(|part| part.text.as_deref())
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    Ok(language_answer(&content))
+}
+
 // ---- answers ----------------------------------------------------------------
 
 fn system_prompt(language: &str) -> String {
@@ -463,6 +571,57 @@ fn numbered_lines(lines: &[String]) -> String {
         .map(|(n, text)| serde_json::json!({ "n": n, "t": text }))
         .collect();
     serde_json::Value::Array(entries).to_string()
+}
+
+fn detection_prompt(language: &str) -> String {
+    format!(
+        "The text below is a song's lyrics. Are they already written in {}? \
+         Answer with only the word yes or the word no.",
+        language_wording(language)
+    )
+}
+
+/// The language check's answer: yes, no, or `None` when the model said
+/// something else, which translates rather than guesses.
+fn language_answer(raw: &str) -> Option<bool> {
+    let answer = raw.trim().trim_matches('"').trim().to_lowercase();
+    if answer.starts_with("yes") {
+        Some(true)
+    } else if answer.starts_with("no") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// Asks the model whether the words are already in the target language.
+/// Any trouble reads as "no": translating is what the listener asked for,
+/// and a failed check must not cost them their translation.
+async fn already_in_language(
+    http: &reqwest::Client,
+    provider: TranslateProvider,
+    key: &str,
+    model: &str,
+    language: &str,
+    lines: &[String],
+    api: &str,
+) -> bool {
+    let answer = match provider {
+        TranslateProvider::OpenRouter => {
+            openrouter_already_in_language(http, key, model, language, lines, api).await
+        }
+        TranslateProvider::GoogleStudio => {
+            google_already_in_language(http, key, model, language, lines, api).await
+        }
+    };
+    match answer {
+        Ok(Some(answer)) => answer,
+        Ok(None) => false,
+        Err(error) => {
+            log::debug!("could not check the lyrics' language: {error}");
+            false
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -862,6 +1021,171 @@ mod tests {
         let request = server.join().unwrap();
         assert!(request.contains("Hello"));
         assert!(!request.contains("spotify:track"));
+    }
+
+    #[test]
+    fn yes_and_no_answers_read_as_the_language_check() {
+        assert_eq!(language_answer("Yes"), Some(true));
+        assert_eq!(language_answer(" yes, they are Spanish."), Some(true));
+        assert_eq!(language_answer("No."), Some(false));
+        assert_eq!(language_answer("NO, these are English"), Some(false));
+        assert_eq!(language_answer("Spanish"), None);
+        assert_eq!(language_answer(""), None);
+    }
+
+    /// A song already in the listener's language is not sent for translation
+    /// at all: the check comes first, and its yes leaves every line alone.
+    #[test]
+    fn lyrics_already_in_the_target_language_are_not_translated() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let read = stream.read(&mut buffer).unwrap();
+            let body = "{\"choices\":[{\"message\":{\"content\":\"Yes\"}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            String::from_utf8_lossy(&buffer[..read]).into_owned()
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = reqwest::Client::new();
+        let lines = vec!["Hola".to_string(), "Qué tal".to_string()];
+        let translated = runtime.block_on(async {
+            let api = format!("http://{address}");
+            translate_lines_at(
+                &client,
+                TranslateProvider::OpenRouter,
+                "secret-key",
+                "model",
+                "es",
+                &lines,
+                &api,
+            )
+            .await
+            .unwrap()
+        });
+        assert_eq!(translated, vec![None, None]);
+        let request = server.join().unwrap();
+        assert!(request.contains("already written in"));
+        assert!(
+            !request.contains("Translate every line"),
+            "the words were checked, not translated"
+        );
+    }
+
+    /// The check says no, and the translation follows as it always did.
+    #[test]
+    fn lyrics_in_another_language_are_translated_after_the_check() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let mut requests = Vec::new();
+            // The check comes first and says no.
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let read = stream.read(&mut buffer).unwrap();
+            requests.push(String::from_utf8_lossy(&buffer[..read]).into_owned());
+            let body = "{\"choices\":[{\"message\":{\"content\":\"No\"}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            // Then the translation.
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let read = stream.read(&mut buffer).unwrap();
+            requests.push(String::from_utf8_lossy(&buffer[..read]).into_owned());
+            let body = "{\"choices\":[{\"message\":{\"content\":\"[{\\\"n\\\":0,\\\"t\\\":\\\"Hello\\\"}]\"}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            requests
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = reqwest::Client::new();
+        let lines = vec!["Hola".to_string()];
+        let translated = runtime.block_on(async {
+            let api = format!("http://{address}");
+            translate_lines_at(
+                &client,
+                TranslateProvider::OpenRouter,
+                "secret-key",
+                "model",
+                "es",
+                &lines,
+                &api,
+            )
+            .await
+            .unwrap()
+        });
+        assert_eq!(translated, vec![Some("Hello".to_string())]);
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].contains("already written in"));
+        assert!(requests[1].contains("Translate every line"));
+    }
+
+    /// The check works the same through Google AI Studio, key header and all.
+    #[test]
+    fn google_checks_the_language_before_translating() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 8192];
+            let read = stream.read(&mut buffer).unwrap();
+            let body = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Yes\"}]}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            String::from_utf8_lossy(&buffer[..read]).into_owned()
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let client = reqwest::Client::new();
+        let lines = vec!["Hola".to_string()];
+        let translated = runtime.block_on(async {
+            let api = format!("http://{address}");
+            translate_lines_at(
+                &client,
+                TranslateProvider::GoogleStudio,
+                "secret-key",
+                "model",
+                "es",
+                &lines,
+                &api,
+            )
+            .await
+            .unwrap()
+        });
+        assert_eq!(translated, vec![None]);
+        let request = server.join().unwrap();
+        assert!(request.contains("already written in"));
+        assert!(
+            request
+                .to_lowercase()
+                .contains("x-goog-api-key: secret-key")
+        );
     }
 
     #[test]

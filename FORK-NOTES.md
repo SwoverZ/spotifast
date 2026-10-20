@@ -29,6 +29,10 @@ feature lives here. Everything else tracks upstream; the branch is
   lyrics cache directory as `translation-<sha1>.json`. They are kept between
   sessions, so a song is only sent to the provider once, until you clear them
   from **Settings → Storage → Lyric translations → Clear translations**.
+- A song already in the target language is left alone: before translating,
+  the model is asked whether the first lines are already in that language,
+  and a yes shows no second line. The answer is cached with the translation,
+  and a failed check translates as usual rather than guessing.
 - The words of the next song in the queue are fetched, and translated when
   the translator is on, while the current song plays, so a new song shows
   them at once. This happens whether or not a lyrics view is open.
@@ -36,8 +40,8 @@ feature lives here. Everything else tracks upstream; the branch is
 ## Privacy
 
 - Only the lyric lines and the target language travel to the provider you
-  choose, in batches of at most 60 lines. No track metadata, no account
-  information, nothing else.
+  choose, in batches of at most 60 lines (at most 16 for the language check).
+  No track metadata, no account information, nothing else.
 - The API key is stored on this computer only:
   - Linux: `~/.local/state/spotifast/translation_key`
   - macOS and Windows: `translation_key` in the app's state directory.
